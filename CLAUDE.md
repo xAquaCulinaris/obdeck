@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ESP32-based OBD2 diagnostic display system for 2010 Opel Corsa D. Uses MicroPython 1.23.0 on ESP32-WROOM-32 with ILI9488 TFT display and ELM327 Bluetooth adapter for real-time vehicle diagnostics.
+ESP32-based OBD2 diagnostic display system for 2010 Opel Corsa D. Uses MicroPython 1.23.0 on ESP32-WROOM-32 with ILI9488 TFT touchscreen display and ELM327 Bluetooth adapter for real-time vehicle diagnostics.
+
+**Key Features:**
+- Touch-enabled UI with reconnect button
+- MAC address-based Bluetooth connection
+- Auto-retry with multiple PINs (1234, 0000)
+- Real-time OBD2 data display
 
 ## Hardware Platform
 
@@ -31,13 +37,16 @@ Vehicle ECU → ELM327 (BT) → ESP32 UART → Parse → Lock → Shared Dict �
 ### Project Structure
 ```
 src/
-├── main.py              # Application entry, threading coordination
+├── main.py              # Application entry, threading, touch handling
+├── config.py            # Configuration (MAC address, PIN, display settings)
 ├── display/
 │   ├── driver.py        # ILI9488 display driver (SPI communication, drawing)
 │   ├── colors.py        # RGB565 color constants
-│   └── writer.py        # Text rendering with 8x8 bitmap font
+│   ├── writer.py        # Text rendering with 8x8 bitmap font
+│   ├── touch.py         # XPT2046 touch controller driver
+│   └── button.py        # Touch button UI component
 └── obd2/
-    ├── bluetooth.py     # UART/Bluetooth connection to ELM327
+    ├── bluetooth.py     # Bluetooth Classic SPP connection to ELM327
     ├── commands.py      # OBD2 PID definitions and DTC commands
     └── parser.py        # Response parsing and data conversion
 ```
@@ -55,11 +64,28 @@ PIN_RST = 4    # Reset
 TOUCH_CS = 21  # Touch controller CS (XPT2046)
 ```
 
-### UART (ELM327 - if wired, not needed for Bluetooth)
+### Bluetooth (ELM327 via UART2)
+Bluetooth Classic SPP uses UART2 internally - no physical wiring needed between ESP32 and ELM327.
+
+## Configuration
+
+Edit `src/config.py` to set up your ELM327:
+
 ```python
-BT_RX = 16  # ESP32 RX
-BT_TX = 17  # ESP32 TX
+# Find MAC address by pairing ELM327 with phone first
+BT_MAC_ADDRESS = "00:1D:A5:68:98:8B"  # Replace with your ELM327 MAC
+
+# Primary PIN to try
+BT_PIN = "1234"  # Common PINs: "1234", "0000", "6789"
+
+# Auto-try "0000" if primary PIN fails
+BT_AUTO_TRY_PINS = True
 ```
+
+**How to find MAC address:**
+1. Pair ELM327 with your phone via Bluetooth settings
+2. View device details to see MAC address
+3. Copy MAC address to config.py
 
 ## OBD2 Implementation
 
@@ -195,15 +221,38 @@ def mock_elm327_response(pid):
 - Touch input not implemented
 - No framebuffer (no partial updates possible)
 
+## Touch UI
+
+### Reconnect Screen
+When Bluetooth connection fails:
+- Display shows "Connection Failed!" message
+- Shows configured MAC address
+- Displays error message
+- Shows "Reconnect" button (touch to retry)
+
+### Touch Calibration
+If touch coordinates are off, run calibration:
+```python
+touch.calibrate()  # Touch corners when prompted
+```
+
+Or set manually in `touch.py`:
+```python
+touch.set_calibration(x_min=300, x_max=3900, y_min=300, y_max=3900)
+```
+
 ## Deployment to ESP32
 
 Upload entire src/ directory structure to ESP32:
 ```
+/config.py           # IMPORTANT: Edit MAC address first!
 /main.py
 /display/
   driver.py
   colors.py
   writer.py
+  touch.py
+  button.py
 /obd2/
   bluetooth.py
   commands.py
@@ -211,3 +260,5 @@ Upload entire src/ directory structure to ESP32:
 ```
 
 Use tools like `ampy`, `rshell`, or Thonny IDE for file transfer. MicroPython supports subdirectories for module imports.
+
+**Before first run:** Edit `config.py` with your ELM327 MAC address!
