@@ -15,19 +15,6 @@ from machine import Pin
 import time
 
 
-# Color Constants (RGB565 format)
-BLACK   = 0x0000
-WHITE   = 0xFFFF
-RED     = 0xF800
-GREEN   = 0x07E0
-BLUE    = 0x001F
-CYAN    = 0x07FF
-MAGENTA = 0xF81F
-YELLOW  = 0xFFE0
-GRAY    = 0x8410
-ORANGE  = 0xFD20
-
-
 # ILI9488 Commands
 CMD_NOP         = 0x00
 CMD_SWRESET     = 0x01
@@ -46,7 +33,7 @@ CMD_INVON       = 0x21  # Display inversion on
 CMD_INVOFF      = 0x20  # Display inversion off
 
 
-class ILI9488:
+class Display:
     """
     ILI9488 Display Driver Class
 
@@ -306,4 +293,5 @@ class ILI9488:
 
     def clear(self):
         """Clear display to black"""
+        from display.colors import BLACK
         self.fill(BLACK)

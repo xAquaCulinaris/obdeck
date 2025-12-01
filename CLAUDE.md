@@ -28,10 +28,19 @@ Thread synchronization uses `_thread.allocate_lock()` to protect the shared `obd
 Vehicle ECU → ELM327 (BT) → ESP32 UART → Parse → Lock → Shared Dict → Lock → Display Thread → ILI9488
 ```
 
-### Key Modules (src/)
-- `main.py` - Application entry, threading, main loop
-- `ili9488.py` - Display driver (initialization, drawing primitives, color constants)
-- `writer.py` - Text rendering with 8x8 bitmap font
+### Project Structure
+```
+src/
+├── main.py              # Application entry, threading coordination
+├── display/
+│   ├── driver.py        # ILI9488 display driver (SPI communication, drawing)
+│   ├── colors.py        # RGB565 color constants
+│   └── writer.py        # Text rendering with 8x8 bitmap font
+└── obd2/
+    ├── bluetooth.py     # UART/Bluetooth connection to ELM327
+    ├── commands.py      # OBD2 PID definitions and DTC commands
+    └── parser.py        # Response parsing and data conversion
+```
 
 ## Pin Configuration
 
@@ -99,7 +108,7 @@ Always acquire lock before reading/writing this dictionary.
 
 ## Display Implementation
 
-### Color Constants (RGB565 in ili9488.py)
+### Color Constants (RGB565 in display/colors.py)
 ```python
 BLACK = 0x0000   # Background
 WHITE = 0xFFFF   # Text values
@@ -163,19 +172,19 @@ def mock_elm327_response(pid):
 - Touch not working: Ensure separate CS pin (TOUCH_CS=21)
 
 ### Software
-- Import errors: Upload all files to ESP32 root directory
+- Import errors: Upload entire directory structure to ESP32 (src/ with subdirs)
 - Memory errors: Add `gc.collect()` after large operations
-- Timeout errors: Increase ELM327 timeout to 1000-2000ms
-- Parse errors: ELM327 response format varies (handle spaces/linefeeds)
+- Timeout errors: Increase ELM327 timeout to 1000-2000ms in bluetooth.py
+- Parse errors: ELM327 response format varies (handled in parser.py)
 
 ## Adding New PIDs
 
-1. Find PID code from OBD2 standard (Mode 01 for current data)
-2. Determine response byte count (1 or 2)
-3. Implement conversion formula (see readme table)
-4. Add query to OBD2 thread rotation
-5. Update shared data structure
-6. Add to display layout with appropriate Y coordinate
+1. Add PID to `obd2/commands.py` in `OBD2Commands.PIDS` dict
+2. Add metadata to `OBD2Commands.PID_INFO` (name, bytes, formula, unit)
+3. Add parsing logic to `obd2/parser.py` in `parse_response()`
+4. Update `obd_data` dictionary in `main.py` with new field
+5. Add data update logic in `obd2_thread()` in `main.py`
+6. Add display rendering in `display_thread()` in `main.py`
 
 ## Known Limitations
 
@@ -188,11 +197,17 @@ def mock_elm327_response(pid):
 
 ## Deployment to ESP32
 
-Files must be uploaded to ESP32 root filesystem:
+Upload entire src/ directory structure to ESP32:
 ```
 /main.py
-/ili9488.py
-/writer.py
+/display/
+  driver.py
+  colors.py
+  writer.py
+/obd2/
+  bluetooth.py
+  commands.py
+  parser.py
 ```
 
-Use tools like `ampy`, `rshell`, or Thonny IDE for file transfer to MicroPython device.
+Use tools like `ampy`, `rshell`, or Thonny IDE for file transfer. MicroPython supports subdirectories for module imports.

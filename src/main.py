@@ -13,10 +13,17 @@ Author: ESP32 OBD2 Project
 import time
 import _thread
 import gc
-from machine import Pin, SPI, UART
+from machine import Pin, SPI
 
-from ili9488 import ILI9488, BLACK, WHITE, GREEN, RED, CYAN, YELLOW
-from writer import Writer
+# Display modules
+from display.driver import Display
+from display.colors import BLACK, WHITE, GREEN, RED, CYAN, YELLOW
+from display.writer import Writer
+
+# OBD2 modules
+from obd2.bluetooth import BluetoothConnection
+from obd2.commands import OBD2Commands
+from obd2.parser import OBD2Parser
 
 
 # Pin Configuration
@@ -28,10 +35,10 @@ PIN_DC = 2
 PIN_RST = 4
 TOUCH_CS = 21
 
-# UART Configuration (if using wired ELM327)
-BT_RX = 16
+# UART Configuration
 BT_TX = 17
-UART_BAUD = 38400
+BT_RX = 16
+UART_ID = 1
 
 # Shared Data Structure (Thread-safe with lock)
 obd_data = {
@@ -49,138 +56,21 @@ obd_data = {
 data_lock = _thread.allocate_lock()
 
 
-def init_elm327(uart):
-    """
-    Initialize ELM327 adapter with AT commands
-
-    Args:
-        uart: UART object for ELM327 communication
-
-    Returns:
-        bool: True if initialization successful
-    """
-    commands = [
-        'ATZ',      # Reset ELM327
-        'ATE0',     # Echo off
-        'ATL0',     # Linefeeds off
-        'ATS0',     # Spaces off
-        'ATSP0',    # Auto protocol detection
-        'ATAT1',    # Adaptive timing auto
-        '0100'      # Test: Supported PIDs
-    ]
-
-    print("Initializing ELM327...")
-
-    for cmd in commands:
-        uart.write(cmd + '\r')
-        time.sleep(0.5)
-        response = uart.read()
-        if response:
-            print(f"{cmd}: {response.decode('utf-8', 'ignore').strip()}")
-        else:
-            print(f"{cmd}: No response")
-            return False
-
-    print("ELM327 initialized successfully")
-    return True
-
-
-def query_pid(uart, mode, pid):
-    """
-    Query a PID from the vehicle ECU
-
-    Args:
-        uart: UART object
-        mode: OBD mode (e.g., '01' for current data)
-        pid: PID code (e.g., '05' for coolant temp)
-
-    Returns:
-        str: Response from ELM327, or None on timeout
-    """
-    command = f"{mode}{pid}\r"
-    uart.write(command)
-
-    time.sleep(0.3)  # Wait for response
-
-    response = uart.read()
-    if response:
-        return response.decode('utf-8', 'ignore').strip()
-    return None
-
-
-def parse_pid_response(response, pid):
-    """
-    Parse ELM327 response and convert to value
-
-    Args:
-        response: Raw response string from ELM327
-        pid: PID code to determine parsing method
-
-    Returns:
-        Parsed value or None on error
-    """
-    if not response or 'NO DATA' in response:
-        return None
-
-    # Remove spaces and extract hex data
-    data = response.replace(' ', '').replace('>', '').replace('\r', '').replace('\n', '')
-
-    # Response format: 41[PID][DATA]
-    if not data.startswith('41'):
-        return None
-
-    try:
-        # Extract data bytes after mode and PID
-        hex_data = data[4:]
-
-        if pid == '05':  # Coolant temp: A - 40
-            a = int(hex_data[0:2], 16)
-            return a - 40
-
-        elif pid == '0C':  # RPM: (A*256 + B) / 4
-            a = int(hex_data[0:2], 16)
-            b = int(hex_data[2:4], 16)
-            return (a * 256 + b) / 4
-
-        elif pid == '0D':  # Speed: A
-            a = int(hex_data[0:2], 16)
-            return a
-
-        elif pid == '0F':  # Intake air temp: A - 40
-            a = int(hex_data[0:2], 16)
-            return a - 40
-
-        elif pid == '11':  # Throttle: (A * 100) / 255
-            a = int(hex_data[0:2], 16)
-            return (a * 100) / 255
-
-        elif pid == '42':  # Battery voltage: (A*256 + B) / 1000
-            a = int(hex_data[0:2], 16)
-            b = int(hex_data[2:4], 16)
-            return (a * 256 + b) / 1000
-
-    except (ValueError, IndexError) as e:
-        print(f"Parse error for PID {pid}: {e}")
-        return None
-
-    return None
-
-
-def obd2_thread(uart_id=1):
+def obd2_thread(uart_id=UART_ID):
     """
     OBD2 Communication Thread (runs on Core 0)
     Queries ELM327 and updates shared data structure
 
     Args:
-        uart_id: UART peripheral ID (1 or 2)
+        uart_id: UART peripheral ID
     """
     global obd_data, data_lock
 
-    # Initialize UART for ELM327
-    uart = UART(uart_id, baudrate=UART_BAUD, tx=BT_TX, rx=BT_RX, timeout=1000)
+    # Initialize Bluetooth connection
+    bt_connection = BluetoothConnection(uart_id=uart_id, tx_pin=BT_TX, rx_pin=BT_RX)
 
     # Initialize ELM327
-    if not init_elm327(uart):
+    if not bt_connection.init_elm327():
         with data_lock:
             obd_data['connected'] = False
             obd_data['error'] = 'ELM327 init failed'
@@ -190,36 +80,43 @@ def obd2_thread(uart_id=1):
         obd_data['connected'] = True
         obd_data['error'] = ''
 
-    # PID query rotation
-    pids = ['05', '0C', '0D', '0F', '11', '42']
+    # Get supported PIDs
+    pid_names = OBD2Commands.get_supported_pids()
     pid_index = 0
 
     while True:
         try:
             # Query next PID in rotation
-            pid = pids[pid_index]
-            response = query_pid(uart, '01', pid)
+            pid_name = pid_names[pid_index]
+            command = OBD2Commands.get_pid_command(pid_name)
 
-            if response:
-                value = parse_pid_response(response, pid)
+            if command:
+                # Send command and get response
+                response = bt_connection.send_command(command)
 
-                # Update shared data
-                with data_lock:
-                    if pid == '05' and value is not None:
-                        obd_data['coolant_temp'] = value
-                    elif pid == '0C' and value is not None:
-                        obd_data['rpm'] = int(value)
-                    elif pid == '0D' and value is not None:
-                        obd_data['speed'] = int(value)
-                    elif pid == '0F' and value is not None:
-                        obd_data['intake_temp'] = value
-                    elif pid == '11' and value is not None:
-                        obd_data['throttle'] = value
-                    elif pid == '42' and value is not None:
-                        obd_data['battery_voltage'] = value
+                if response and OBD2Parser.is_valid_response(response):
+                    # Extract PID hex from command (last 2 chars)
+                    pid_hex = command[-2:]
+                    value = OBD2Parser.parse_response(response, pid_hex)
+
+                    # Update shared data
+                    if value is not None:
+                        with data_lock:
+                            if pid_name == 'COOLANT_TEMP':
+                                obd_data['coolant_temp'] = value
+                            elif pid_name == 'RPM':
+                                obd_data['rpm'] = int(value)
+                            elif pid_name == 'SPEED':
+                                obd_data['speed'] = int(value)
+                            elif pid_name == 'INTAKE_TEMP':
+                                obd_data['intake_temp'] = value
+                            elif pid_name == 'THROTTLE':
+                                obd_data['throttle'] = value
+                            elif pid_name == 'BATTERY_VOLTAGE':
+                                obd_data['battery_voltage'] = value
 
             # Move to next PID
-            pid_index = (pid_index + 1) % len(pids)
+            pid_index = (pid_index + 1) % len(pid_names)
 
             time.sleep(0.5)  # 2 Hz query rate
 
@@ -242,7 +139,7 @@ def display_thread():
               sck=Pin(PIN_SCK), mosi=Pin(PIN_MOSI), miso=Pin(PIN_MISO))
 
     # Initialize display
-    display = ILI9488(spi, cs=Pin(PIN_CS), dc=Pin(PIN_DC), rst=Pin(PIN_RST))
+    display = Display(spi, cs=Pin(PIN_CS), dc=Pin(PIN_DC), rst=Pin(PIN_RST))
     display.init()
     display.fill(BLACK)
 
@@ -269,7 +166,7 @@ def display_thread():
             writer.text("Speed:", 10, 160, GREEN, size=2)
             writer.text("Battery:", 10, 210, GREEN, size=2)
 
-            # Draw values (white, larger)
+            # Draw values (white, larger) with padding for overwrite
             writer.text(f"{coolant:.1f} C  ", 150, 60, WHITE, size=3)
             writer.text(f"{rpm} RPM  ", 150, 110, WHITE, size=3)
             writer.text(f"{speed} km/h  ", 150, 160, WHITE, size=3)
@@ -277,12 +174,14 @@ def display_thread():
 
             # Status bar
             if connected:
-                writer.text("Status: Connected", 10, 280, GREEN, size=1)
+                writer.text("Status: Connected   ", 10, 280, GREEN, size=1)
             else:
                 writer.text("Status: Disconnected", 10, 280, RED, size=1)
 
             if error:
                 writer.text(f"Error: {error[:30]}", 10, 300, RED, size=1)
+            else:
+                writer.text(" " * 40, 10, 300, BLACK, size=1)  # Clear error line
 
             # Garbage collection
             gc.collect()
@@ -305,7 +204,7 @@ def main():
     print("OBD2: ELM327 Bluetooth")
 
     # Start OBD2 thread on second core
-    _thread.start_new_thread(obd2_thread, (1,))
+    _thread.start_new_thread(obd2_thread, (UART_ID,))
 
     # Start display thread on main core
     display_thread()
