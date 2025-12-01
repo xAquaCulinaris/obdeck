@@ -21,6 +21,7 @@ from display.colors import BLACK, WHITE, GREEN, RED, CYAN, YELLOW, GRAY
 from display.writer import Writer
 from display.touch import Touch
 from display.button import Button
+from display.pages import PageManager
 
 # OBD2 modules
 from obd2.bluetooth import BluetoothConnection
@@ -54,11 +55,72 @@ obd_data = {
     'intake_temp': 0.0,       # Celsius
     'throttle': 0.0,          # Percent
     'connected': False,       # ELM327 connection status
-    'error': ''               # Error message
+    'error': '',              # Error message
+    'dtc_codes': [],          # List of DTC codes (e.g., ['P0420', 'P0133'])
+    'dtc_count': 0,           # Number of DTCs
+    'dtc_read': False,        # Flag: DTCs have been read
+    'dtc_refresh': False,     # Flag: User requested DTC refresh
+    'dtc_clear': False        # Flag: User requested DTC clear
 }
 
 # Thread synchronization lock
 data_lock = _thread.allocate_lock()
+
+
+def read_dtcs(bt_connection):
+    """
+    Read diagnostic trouble codes from vehicle
+
+    Args:
+        bt_connection: Bluetooth connection object
+    """
+    global obd_data, data_lock
+
+    print("Reading DTCs...")
+
+    # Send Mode 03 command (read stored DTCs)
+    response = bt_connection.send_command('03', timeout=3000)
+
+    if response:
+        # Parse DTCs
+        dtc_list = OBD2Parser.parse_dtc_response(response)
+
+        with data_lock:
+            obd_data['dtc_codes'] = dtc_list
+            obd_data['dtc_count'] = len(dtc_list)
+            obd_data['dtc_read'] = True
+
+        print(f"Found {len(dtc_list)} DTCs: {dtc_list}")
+    else:
+        print("No DTC response")
+        with data_lock:
+            obd_data['dtc_codes'] = []
+            obd_data['dtc_count'] = 0
+            obd_data['dtc_read'] = True
+
+
+def clear_dtcs(bt_connection):
+    """
+    Clear diagnostic trouble codes
+
+    Args:
+        bt_connection: Bluetooth connection object
+    """
+    global obd_data, data_lock
+
+    print("Clearing DTCs...")
+
+    # Send Mode 04 command (clear DTCs)
+    response = bt_connection.send_command('04', timeout=3000)
+
+    if response and '44' in response:
+        print("DTCs cleared successfully")
+
+        # Re-read DTCs to confirm
+        time.sleep(1)
+        read_dtcs(bt_connection)
+    else:
+        print("Failed to clear DTCs")
 
 
 def obd2_thread():
@@ -93,12 +155,35 @@ def obd2_thread():
         obd_data['connected'] = True
         obd_data['error'] = ''
 
+    # Wait 5 seconds after connection, then read DTCs once
+    time.sleep(5)
+    read_dtcs(bt_connection)
+
     # Get supported PIDs
     pid_names = OBD2Commands.get_supported_pids()
     pid_index = 0
 
     while True:
         try:
+            # Check for DTC refresh request
+            refresh_requested = False
+            clear_requested = False
+
+            with data_lock:
+                if obd_data['dtc_refresh']:
+                    refresh_requested = True
+                    obd_data['dtc_refresh'] = False
+
+                if obd_data['dtc_clear']:
+                    clear_requested = True
+                    obd_data['dtc_clear'] = False
+
+            # Handle DTC operations
+            if clear_requested:
+                clear_dtcs(bt_connection)
+            elif refresh_requested:
+                read_dtcs(bt_connection)
+
             # Query next PID in rotation
             pid_name = pid_names[pid_index]
             command = OBD2Commands.get_pid_command(pid_name)
@@ -143,8 +228,8 @@ def obd2_thread():
 def display_thread():
     """
     Display Update Thread (runs on Core 1)
-    Renders data from shared structure to ILI9488 display
-    Handles touch input for reconnect button
+    Renders multi-page UI with navigation
+    Handles touch input for page switching and actions
     """
     global obd_data, data_lock
 
@@ -163,32 +248,31 @@ def display_thread():
     # Initialize touch controller
     touch = Touch(spi, cs_pin=Pin(TOUCH_CS), width=480, height=320)
 
-    # Create reconnect button (hidden initially)
+    # Initialize page manager
+    page_manager = PageManager(display, writer)
+
+    # Create reconnect button for connection failures
     reconnect_btn = Button(
-        x=140, y=240, width=200, height=60,
+        x=140, y=180, width=200, height=60,
         text="Reconnect",
         display=display, writer=writer,
         bg_color=RED, text_color=WHITE, text_size=2
     )
     reconnect_btn.set_visible(False)
 
-    # Draw static header
-    writer.text(config.VEHICLE_NAME, 10, 10, CYAN, size=2)
-
-    # Connection state
+    # State tracking
     show_reconnect_screen = False
     last_touch_time = 0
+    last_page_draw = 0
 
     while True:
         try:
             # Read shared data (thread-safe)
             with data_lock:
-                coolant = obd_data['coolant_temp']
-                rpm = obd_data['rpm']
-                speed = obd_data['speed']
-                battery = obd_data['battery_voltage']
-                connected = obd_data['connected']
-                error = obd_data['error']
+                data_snapshot = obd_data.copy()
+
+            connected = data_snapshot['connected']
+            error = data_snapshot.get('error', '')
 
             # Check if we need to show reconnect screen
             if not connected and not show_reconnect_screen:
@@ -202,13 +286,14 @@ def display_thread():
                 reconnect_btn.set_visible(True)
 
             elif connected and show_reconnect_screen:
-                # Connection restored - switch back to main screen
+                # Connection restored - switch to dashboard
                 show_reconnect_screen = False
                 reconnect_btn.set_visible(False)
                 display.fill(BLACK)
-                writer.text(config.VEHICLE_NAME, 10, 10, CYAN, size=2)
+                page_manager.switch_page(0)  # Dashboard
+                last_page_draw = 0  # Force redraw
 
-            # Handle touch input (check for button press)
+            # Handle touch input
             touch_pos = touch.get_touch()
             if touch_pos:
                 touch_x, touch_y = touch_pos
@@ -218,41 +303,63 @@ def display_thread():
                 if time.ticks_diff(current_time, last_touch_time) > 500:
                     last_touch_time = current_time
 
-                    # Check if reconnect button was pressed
-                    if reconnect_btn.visible and reconnect_btn.is_touched(touch_x, touch_y):
-                        reconnect_btn.press()
-                        time.sleep_ms(200)  # Visual feedback
-                        reconnect_btn.release()
+                    if show_reconnect_screen:
+                        # Handle reconnect button
+                        if reconnect_btn.is_touched(touch_x, touch_y):
+                            reconnect_btn.press()
+                            time.sleep_ms(200)
+                            reconnect_btn.release()
 
-                        # Trigger reconnection by restarting OBD2 thread
-                        # (In a real implementation, you'd use a flag to signal the thread)
-                        with data_lock:
-                            obd_data['error'] = 'Reconnecting...'
-                        display.fill(BLACK)
-                        writer.text(config.VEHICLE_NAME, 10, 10, CYAN, size=2)
-                        writer.text("Reconnecting...", 150, 150, YELLOW, size=2)
+                            with data_lock:
+                                obd_data['error'] = 'Reconnecting...'
+                            display.fill(BLACK)
+                            writer.text(config.VEHICLE_NAME, 10, 10, CYAN, size=2)
+                            writer.text("Reconnecting...", 150, 150, YELLOW, size=2)
+                    else:
+                        # Handle navigation bar touch
+                        nav_pressed = page_manager.handle_nav_touch(touch_x, touch_y)
 
-            # Main data display (only when connected)
+                        if nav_pressed:
+                            last_page_draw = 0  # Force redraw on page change
+
+                        # Handle page-specific touches
+                        if not nav_pressed:
+                            action = page_manager.handle_page_touch(touch_x, touch_y)
+
+                            if action == 'refresh':
+                                # Request DTC refresh
+                                with data_lock:
+                                    obd_data['dtc_refresh'] = True
+                                print("DTC refresh requested")
+
+                            elif action == 'confirm_clear':
+                                # User confirmed - request DTC clear
+                                with data_lock:
+                                    obd_data['dtc_clear'] = True
+                                print("DTC clear confirmed and requested")
+                                last_page_draw = 0  # Force redraw
+
+                            elif action == 'cancel_clear':
+                                # User cancelled - redraw page
+                                print("DTC clear cancelled")
+                                last_page_draw = 0  # Force redraw
+
+                            elif action == 'show_confirm':
+                                # Confirmation dialog shown - no action needed
+                                pass
+
+            # Draw pages (only when connected)
             if connected and not show_reconnect_screen:
-                # Draw labels (green)
-                writer.text("Coolant:", 10, 60, GREEN, size=2)
-                writer.text("RPM:", 10, 110, GREEN, size=2)
-                writer.text("Speed:", 10, 160, GREEN, size=2)
-                writer.text("Battery:", 10, 210, GREEN, size=2)
-
-                # Draw values (white, larger) with padding for overwrite
-                writer.text(f"{coolant:.1f} C  ", 150, 60, WHITE, size=3)
-                writer.text(f"{rpm} RPM  ", 150, 110, WHITE, size=3)
-                writer.text(f"{speed} km/h  ", 150, 160, WHITE, size=3)
-                writer.text(f"{battery:.2f} V  ", 150, 210, WHITE, size=3)
-
-                # Status bar
-                writer.text("Status: Connected   ", 10, 280, GREEN, size=1)
+                # Redraw page periodically or after data changes
+                current_time = time.ticks_ms()
+                if time.ticks_diff(current_time, last_page_draw) > 500:  # 2 Hz update
+                    page_manager.draw(data_snapshot)
+                    last_page_draw = current_time
 
             # Garbage collection
             gc.collect()
 
-            time.sleep_ms(100)  # 10 Hz refresh for touch responsiveness
+            time.sleep_ms(100)  # 10 Hz for touch responsiveness
 
         except Exception as e:
             print(f"Display thread error: {e}")
