@@ -98,6 +98,29 @@ class Display:
         self.cs.value(1)  # Deselect
 
 
+    def rgb565_to_rgb666(self, color):
+        """
+        Convert RGB565 (16-bit) color to RGB666 (18-bit, 3 bytes)
+
+        Args:
+            color: RGB565 color value (16-bit)
+
+        Returns:
+            Tuple of (R, G, B) bytes for RGB666
+        """
+        # Extract RGB565 components
+        r5 = (color >> 11) & 0x1F
+        g6 = (color >> 5) & 0x3F
+        b5 = color & 0x1F
+
+        # Scale to 8 bits
+        r8 = (r5 << 3) | (r5 >> 2)
+        g8 = (g6 << 2) | (g6 >> 4)
+        b8 = (b5 << 3) | (b5 >> 2)
+
+        return (r8, g8, b8)
+
+
     def reset(self):
         """Hardware reset display"""
         self.rst.value(1)
@@ -125,13 +148,13 @@ class Display:
         self.write_cmd(CMD_SLPOUT)
         time.sleep_ms(120)
 
-        # Interface pixel format: 16-bit/pixel (RGB565)
+        # Interface pixel format: 18-bit/pixel (RGB666)
         self.write_cmd(CMD_COLMOD)
-        self.write_data(0x55)  # 16-bit color
+        self.write_data(0x66)  # 18-bit color (RGB666)
 
         # Memory access control (rotation, RGB/BGR order)
         self.write_cmd(CMD_MADCTL)
-        self.write_data(0x48)  # MX, BGR
+        self.write_data(0xE8)  # Landscape (not mirrored): MY=1, MX=1, MV=1, BGR=1
 
         # Interface mode control
         self.write_cmd(CMD_IFMODE)
@@ -192,8 +215,10 @@ class Display:
             return
 
         self.set_window(x, y, x, y)
-        self.write_data(color >> 8)
-        self.write_data(color & 0xFF)
+        r, g, b = self.rgb565_to_rgb666(color)
+        self.write_data(r)
+        self.write_data(g)
+        self.write_data(b)
 
 
     def fill(self, color):
@@ -228,22 +253,22 @@ class Display:
 
         self.set_window(x, y, x + w - 1, y + h - 1)
 
-        # Prepare color bytes
-        color_high = color >> 8
-        color_low = color & 0xFF
+        # Convert RGB565 to RGB666
+        r, g, b = self.rgb565_to_rgb666(color)
 
-        # Write pixels efficiently
+        # Write pixels efficiently in RGB666 format (3 bytes per pixel)
         self.dc.value(1)
         self.cs.value(0)
 
-        chunk_size = 512  # Write in chunks
-        chunk = bytearray([color_high, color_low] * (chunk_size // 2))
+        chunk_size = 480  # Write in chunks (160 pixels * 3 bytes = 480 bytes)
+        chunk = bytearray([r, g, b] * (chunk_size // 3))
 
         pixels_remaining = w * h
         while pixels_remaining > 0:
-            pixels_to_write = min(pixels_remaining, chunk_size // 2)
-            self.spi.write(chunk[:pixels_to_write * 2])
+            pixels_to_write = min(pixels_remaining, chunk_size // 3)
+            self.spi.write(chunk[:pixels_to_write * 3])
             pixels_remaining -= pixels_to_write
+            time.sleep_us(50)  # Yield to watchdog
 
         self.cs.value(1)
 

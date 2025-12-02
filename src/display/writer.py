@@ -119,9 +119,9 @@ class Writer:
         self.display = display
 
 
-    def char(self, c, x, y, color, size=1):
+    def char(self, c, x, y, color, size=1, bg=None):
         """
-        Draw single character
+        Draw single character using buffered rendering (FAST!)
 
         Args:
             c: Character to draw (str, single char)
@@ -129,27 +129,60 @@ class Writer:
             y: Y coordinate (top-left)
             color: RGB565 color value
             size: Scale factor (1, 2, 3, etc.)
+            bg: Background color (optional)
         """
         if c not in FONT_8X8:
             c = ' '  # Default to space if character not found
 
         bitmap = FONT_8X8[c]
+        char_width = 8 * size
+        char_height = 8 * size
 
-        for row in range(8):
+        # Convert colors to RGB666
+        r, g, b = self.display.rgb565_to_rgb666(color)
+
+        if bg is not None:
+            bg_r, bg_g, bg_b = self.display.rgb565_to_rgb666(bg)
+
+        # Set window once for entire character
+        self.display.set_window(x, y, x + char_width - 1, y + char_height - 1)
+
+        # Prepare buffer for character (3 bytes per pixel in RGB666)
+        buffer_size = char_width * char_height * 3
+        buffer = bytearray(buffer_size)
+
+        # Fill buffer
+        idx = 0
+        for py in range(char_height):
+            row = py // size
             byte = bitmap[row]
-            for col in range(8):
-                if byte & (0x80 >> col):  # Check if pixel is set
-                    # Draw scaled pixel
-                    for dy in range(size):
-                        for dx in range(size):
-                            self.display.pixel(x + col * size + dx,
-                                             y + row * size + dy,
-                                             color)
+            for px in range(char_width):
+                col = px // size
+                if byte & (0x80 >> col):
+                    # Foreground pixel
+                    buffer[idx] = r
+                    buffer[idx + 1] = g
+                    buffer[idx + 2] = b
+                elif bg is not None:
+                    # Background pixel
+                    buffer[idx] = bg_r
+                    buffer[idx + 1] = bg_g
+                    buffer[idx + 2] = bg_b
+                else:
+                    # Transparent - skip (buffer already zeros)
+                    pass
+                idx += 3
+
+        # Write entire character in one transaction!
+        self.display.dc.value(1)
+        self.display.cs.value(0)
+        self.display.spi.write(buffer)
+        self.display.cs.value(1)
 
 
     def text(self, string, x, y, color, size=1, bg=None):
         """
-        Draw text string
+        Draw text string (optimized buffered rendering)
 
         Args:
             string: Text to draw
@@ -162,12 +195,8 @@ class Writer:
         cursor_x = x
 
         for char in string:
-            # Draw background if specified
-            if bg is not None:
-                self.display.fill_rect(cursor_x, y, 8 * size, 8 * size, bg)
-
-            # Draw character
-            self.char(char, cursor_x, y, color, size)
+            # Draw character (bg handled inside char() now)
+            self.char(char, cursor_x, y, color, size, bg)
 
             # Move cursor
             cursor_x += 8 * size

@@ -32,14 +32,14 @@ from obd2.parser import OBD2Parser
 import config
 
 
-# Pin Configuration
-PIN_MOSI = 23
-PIN_MISO = 19
-PIN_SCK = 18
-PIN_CS = 15
-PIN_DC = 2
-PIN_RST = 4
-TOUCH_CS = 21
+# Pin Configuration (use values from config.py)
+PIN_MOSI = config.PIN_MOSI
+PIN_MISO = config.PIN_MISO
+PIN_SCK = config.PIN_SCK
+PIN_CS = config.PIN_CS  # Now GPIO 5 (from config.py)
+PIN_DC = config.PIN_DC
+PIN_RST = config.PIN_RST
+TOUCH_CS = config.TOUCH_CS
 
 # UART Configuration
 BT_TX = 17

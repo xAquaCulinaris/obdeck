@@ -8,7 +8,7 @@ Modify these settings for your specific hardware and preferences
 PIN_MOSI = 23
 PIN_MISO = 19
 PIN_SCK = 18
-PIN_CS = 15
+PIN_CS = 5  # Changed from 15 (strapping pin issue)
 PIN_DC = 2
 PIN_RST = 4
 TOUCH_CS = 21
