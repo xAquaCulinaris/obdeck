@@ -20,6 +20,9 @@
 #define TFT_DC   2   // Data/Command
 #define TFT_RST  4   // Reset
 
+// Touch controller (XPT2046)
+#define TOUCH_CS 21  // Touch chip select
+
 // Use VSPI (default for ESP32)
 #define VSPI_HOST
 

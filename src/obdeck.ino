@@ -15,7 +15,18 @@
 #include <BluetoothSerial.h>
 #include <ELMduino.h>
 #include <TFT_eSPI.h>
+#include <XPT2046_Touchscreen.h>
+#include <SPI.h>
 #include "config.h"
+#include "ui.h"
+
+// ============================================================================
+// PAGE SYSTEM (enum defined in ui.h)
+// ============================================================================
+
+// Current page state
+Page current_page = PAGE_DASHBOARD;
+bool page_needs_redraw = true;
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -24,6 +35,7 @@
 BluetoothSerial SerialBT;
 ELM327 elm327;
 TFT_eSPI tft = TFT_eSPI();
+XPT2046_Touchscreen touch(TOUCH_CS);
 
 // ============================================================================
 // SHARED DATA STRUCTURE (Thread-safe with mutex)
@@ -84,11 +96,12 @@ String sendOBD2Command(String cmd) {
  */
 int parseHexByte(String response, int byteIndex) {
     // Response format: "41 05 A0 >"
-    // Remove "41 " prefix and split by spaces
+    // "41" = mode response, "05" = PID echo, "A0" = actual data
     int startPos = response.indexOf("41");
     if (startPos < 0) return -1;
 
-    String data = response.substring(startPos + 3);  // Skip "41 "
+    // Skip "41 XX " (mode response + PID + spaces = 6 characters)
+    String data = response.substring(startPos + 6);
     data.trim();
 
     // Find the nth hex byte
@@ -429,26 +442,76 @@ void initDisplay() {
 }
 
 /**
- * Draw dashboard UI
+ * Draw current page with smart partial updates (no flickering!)
  */
-void drawDashboard() {
+void drawCurrentPage() {
+    static int draw_count = 0;
+    static uint16_t last_rpm = 0xFFFF;
+    static uint8_t last_speed = 0xFF;
+    static float last_coolant = -999;
+    static float last_throttle = -999;
+    static float last_battery = -999;
+    static float last_intake = -999;
+    static bool last_connected = false;
+    static bool needs_full_redraw = true;
+
+    draw_count++;
+
     // Get data copy (thread-safe)
     OBDData data_copy;
     xSemaphoreTake(data_mutex, portMAX_DELAY);
     data_copy = obd_data;
     xSemaphoreGive(data_mutex);
 
-    // Clear screen
-    tft.fillScreen(COLOR_BLACK);
+    // Debug output every 10 draws
+    if (draw_count % 10 == 1) {
+        Serial.printf("[Display] drawCurrentPage called (count=%d, connected=%d, page=%d)\n",
+                      draw_count, data_copy.connected, current_page);
+    }
 
-    // Header
-    tft.setTextColor(COLOR_CYAN, COLOR_BLACK);
-    tft.setTextSize(2);
-    tft.setCursor(10, 10);
-    tft.printf("%s - OBD2", VEHICLE_NAME);
+    // Check if full redraw is needed
+    bool do_full_redraw = (page_needs_redraw || data_copy.connected != last_connected || needs_full_redraw);
 
-    // Check connection status
+    // Determine page name
+    const char* page_name;
+    switch (current_page) {
+        case PAGE_DASHBOARD: page_name = "Dashboard"; break;
+        case PAGE_DTC:       page_name = "DTC Codes"; break;
+        case PAGE_CONFIG:    page_name = "Config"; break;
+        default:             page_name = "Unknown"; break;
+    }
+
+    // Determine status color
+    uint16_t status_color = data_copy.connected ? STATUS_OK : STATUS_ERROR;
+    int dtc_count = 0;  // TODO: Implement DTC reading
+
+    // Full redraw if page changed or connection state changed
+    if (do_full_redraw) {
+        Serial.println("[Display] Full screen redraw");
+        tft.fillScreen(COLOR_BLACK);
+
+        // Draw top bar
+        drawTopBar(VEHICLE_NAME, page_name, status_color, dtc_count);
+
+        // Draw bottom navigation
+        drawBottomNav(current_page);
+
+        // Reset flags
+        page_needs_redraw = false;
+        last_connected = data_copy.connected;
+        needs_full_redraw = false;
+
+        // Force redraw of all values
+        last_rpm = 0xFFFF;
+        last_speed = 0xFF;
+        last_coolant = -999;
+        last_throttle = -999;
+        last_battery = -999;
+        last_intake = -999;
+    }
+
     if (!data_copy.connected) {
+        // Show connection error
         tft.setTextColor(COLOR_RED, COLOR_BLACK);
         tft.setTextSize(3);
         tft.setCursor(80, 140);
@@ -459,56 +522,175 @@ void drawDashboard() {
             tft.setCursor(10, 180);
             tft.printf("Error: %s", data_copy.error);
         }
+    } else {
+        // Draw page content based on current page
+        if (current_page == PAGE_DASHBOARD) {
+            // Smart partial updates for dashboard
+            bool is_full_redraw = (last_rpm == 0xFFFF);  // Check if this is first draw
+            drawDashboardPageSmart(
+                data_copy.rpm, last_rpm,
+                data_copy.speed, last_speed,
+                data_copy.coolant_temp, last_coolant,
+                data_copy.throttle, last_throttle,
+                data_copy.battery_voltage, last_battery,
+                data_copy.intake_temp, last_intake,
+                is_full_redraw
+            );
 
-        return;
+            // Update last values
+            last_rpm = data_copy.rpm;
+            last_speed = data_copy.speed;
+            last_coolant = data_copy.coolant_temp;
+            last_throttle = data_copy.throttle;
+            last_battery = data_copy.battery_voltage;
+            last_intake = data_copy.intake_temp;
+        }
+    }
+}
+
+/**
+ * Draw dashboard with smart partial updates and boxed layout
+ */
+void drawDashboardPageSmart(uint16_t rpm, uint16_t last_rpm,
+                             uint8_t speed, uint8_t last_speed,
+                             float coolant, float last_coolant,
+                             float throttle, float last_throttle,
+                             float battery, float last_battery,
+                             float intake, float last_intake,
+                             bool force_full_redraw) {
+
+    static bool first_draw = true;
+
+    // Reset first_draw if full redraw requested
+    if (force_full_redraw) {
+        first_draw = true;
     }
 
-    // RPM
-    tft.setTextColor(COLOR_GREEN, COLOR_BLACK);
-    tft.setTextSize(2);
-    tft.setCursor(10, 60);
-    tft.print("RPM:");
+    // Layout: 2 columns x 3 rows with boxes
+    const int margin = 5;
+    const int box_width = (SCREEN_WIDTH - 3 * margin) / 2;  // 2 columns
+    const int box_height = (CONTENT_HEIGHT - 4 * margin) / 3;  // 3 rows
+    const int start_y = CONTENT_Y_START + margin;
 
-    tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-    tft.setTextSize(3);
-    tft.setCursor(120, 55);
-    tft.printf("%4d", data_copy.rpm);
+    // Helper function to draw a metric box
+    auto drawMetricBox = [&](int col, int row, const char* label, const char* value,
+                             const char* last_value, uint16_t label_color, bool force_redraw) {
+        int x = margin + col * (box_width + margin);
+        int y = start_y + row * (box_height + margin);
 
-    // Speed
-    tft.setTextColor(COLOR_GREEN, COLOR_BLACK);
-    tft.setTextSize(2);
-    tft.setCursor(10, 110);
-    tft.print("Speed:");
+        // Draw box border and label only on first draw
+        if (first_draw || force_redraw) {
+            // Box border
+            tft.drawRect(x, y, box_width, box_height, COLOR_GRAY);
 
-    tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-    tft.setTextSize(3);
-    tft.setCursor(120, 105);
-    tft.printf("%3d km/h", data_copy.speed);
+            // Label at top
+            tft.setTextColor(label_color, COLOR_BLACK);
+            tft.setTextSize(2);
+            tft.setCursor(x + 10, y + 8);
+            tft.print(label);
+        }
 
-    // Coolant Temperature
-    tft.setTextColor(COLOR_GREEN, COLOR_BLACK);
-    tft.setTextSize(2);
-    tft.setCursor(10, 160);
-    tft.print("Coolant:");
+        // Update value only if changed
+        if (first_draw || force_redraw || strcmp(value, last_value) != 0) {
+            // Clear value area
+            int value_y = y + 35;
+            tft.fillRect(x + 5, value_y, box_width - 10, box_height - 40, COLOR_BLACK);
 
-    tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-    tft.setTextSize(3);
-    tft.setCursor(120, 155);
-    tft.printf("%5.1f C", data_copy.coolant_temp);
+            // Draw new value (large and centered)
+            tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
+            tft.setTextSize(3);  // Size 3 for better fit
+            int text_width = strlen(value) * 18;  // Approximate width for size 3
+            int value_x = x + (box_width - text_width) / 2;
+            tft.setCursor(value_x, value_y + 10);
+            tft.print(value);
+        }
+    };
 
-    // Battery Voltage
-    tft.setTextColor(COLOR_GREEN, COLOR_BLACK);
-    tft.setTextSize(2);
-    tft.setCursor(10, 210);
-    tft.print("Battery:");
+    // Format values
+    char rpm_val[16], last_rpm_val[16];
+    snprintf(rpm_val, sizeof(rpm_val), "%d", rpm);
+    snprintf(last_rpm_val, sizeof(last_rpm_val), "%d", last_rpm);
 
-    tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-    tft.setTextSize(3);
-    tft.setCursor(120, 205);
-    tft.printf("%4.1fV", data_copy.battery_voltage);
+    char speed_val[16], last_speed_val[16];
+    snprintf(speed_val, sizeof(speed_val), "%d", speed);
+    snprintf(last_speed_val, sizeof(last_speed_val), "%d", last_speed);
 
-    // Status indicator
-    tft.fillCircle(460, 20, 10, COLOR_GREEN);
+    char coolant_val[16], last_coolant_val[16];
+    snprintf(coolant_val, sizeof(coolant_val), "%.1f", coolant);
+    snprintf(last_coolant_val, sizeof(last_coolant_val), "%.1f", last_coolant);
+
+    char throttle_val[16], last_throttle_val[16];
+    snprintf(throttle_val, sizeof(throttle_val), "%.0f%%", throttle);
+    snprintf(last_throttle_val, sizeof(last_throttle_val), "%.0f%%", last_throttle);
+
+    char battery_val[16], last_battery_val[16];
+    snprintf(battery_val, sizeof(battery_val), "%.1fV", battery);
+    snprintf(last_battery_val, sizeof(last_battery_val), "%.1fV", last_battery);
+
+    char intake_val[16], last_intake_val[16];
+    snprintf(intake_val, sizeof(intake_val), "%.1f", intake);
+    snprintf(last_intake_val, sizeof(last_intake_val), "%.1f", last_intake);
+
+    // Draw all metrics in grid layout
+    // Row 0
+    drawMetricBox(0, 0, "RPM", rpm_val, last_rpm_val, COLOR_CYAN, false);
+    drawMetricBox(1, 0, "Speed (km/h)", speed_val, last_speed_val, COLOR_CYAN, false);
+
+    // Row 1
+    drawMetricBox(0, 1, "Coolant (C)", coolant_val, last_coolant_val, COLOR_GREEN, false);
+    drawMetricBox(1, 1, "Throttle", throttle_val, last_throttle_val, COLOR_YELLOW, false);
+
+    // Row 2
+    drawMetricBox(0, 2, "Battery", battery_val, last_battery_val, COLOR_GREEN, false);
+    drawMetricBox(1, 2, "Intake (C)", intake_val, last_intake_val, COLOR_GREEN, false);
+
+    first_draw = false;
+}
+
+/**
+ * Handle touch input for page navigation
+ */
+void handleTouch() {
+    if (touch.touched()) {
+        TS_Point p = touch.getPoint();
+
+        // Map touch coordinates to screen coordinates
+        // Note: Calibration may be needed - these are approximate values
+        int x = map(p.x, 300, 3900, 0, SCREEN_WIDTH);
+        int y = map(p.y, 300, 3900, 0, SCREEN_HEIGHT);
+
+        // Check if touch is in bottom navigation area
+        if (y >= BOTTOM_NAV_Y) {
+            // Determine which button was pressed
+            Page new_page = current_page;
+
+            if (x < NAV_DTC_X) {
+                // Dashboard button
+                new_page = PAGE_DASHBOARD;
+            } else if (x < NAV_CONFIG_X) {
+                // DTC button
+                new_page = PAGE_DTC;
+            } else {
+                // Config button
+                new_page = PAGE_CONFIG;
+            }
+
+            // Change page if different
+            if (new_page != current_page) {
+                current_page = new_page;
+                page_needs_redraw = true;
+
+                Serial.printf("[Touch] Page changed to: %d\n", current_page);
+            }
+        }
+
+        // Debounce - wait for touch release (with timeout)
+        unsigned long debounce_start = millis();
+        while (touch.touched() && (millis() - debounce_start < 1000)) {
+            delay(10);
+        }
+        delay(100);  // Additional debounce delay
+    }
 }
 
 // ============================================================================
@@ -546,6 +728,14 @@ void setup() {
     // Initialize display
     initDisplay();
 
+    // Initialize touch controller
+    if (!touch.begin()) {
+        Serial.println("WARNING: Touch controller not found!");
+        // Continue anyway - touch may not be required for basic operation
+    } else {
+        Serial.println("✓ Touch controller initialized");
+    }
+
     // Show startup message
     tft.setTextColor(COLOR_CYAN, COLOR_BLACK);
     tft.setTextSize(3);
@@ -577,9 +767,29 @@ void setup() {
 void loop() {
     // Display task runs on Core 1 (main loop)
     static unsigned long last_update = 0;
+    static bool first_draw = true;
+    static bool loop_started = false;
 
-    if (millis() - last_update >= DISPLAY_REFRESH_MS) {
-        drawDashboard();
+    // Debug: Confirm loop is running
+    if (!loop_started) {
+        Serial.println("[Loop] Main loop started on Core 1");
+        Serial.printf("[Loop] millis=%lu, DISPLAY_REFRESH_MS=%d\n", millis(), DISPLAY_REFRESH_MS);
+        loop_started = true;
+    }
+
+    // TEMPORARILY DISABLED: Handle touch input (check frequently for responsiveness)
+    // handleTouch();
+
+    // Force immediate first draw to clear startup screen
+    if (first_draw) {
+        Serial.println("[Display] First draw - clearing startup screen");
+        drawCurrentPage();
+        last_update = millis();
+        first_draw = false;
+    }
+    // Update display at refresh rate
+    else if (millis() - last_update >= DISPLAY_REFRESH_MS) {
+        drawCurrentPage();
         last_update = millis();
     }
 
