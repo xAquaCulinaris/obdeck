@@ -1,0 +1,10 @@
+{
+    "sync_folder": "src",
+    "py_ignore": [
+        ".vscode",
+        ".git",
+        ".gitignore",
+        "*.pyc",
+        "__pycache__"
+    ]
+}

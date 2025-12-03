@@ -15,9 +15,20 @@ ESP32-based OBD2 diagnostic display system for 2010 Opel Corsa D. Uses MicroPyth
 ## Hardware Platform
 
 - **MCU:** ESP32-WROOM-32 (Dual-core 240MHz, 520KB SRAM)
-- **Display:** ILI9488 3.5" TFT (480x320, SPI, 40MHz)
+- **Display:** KMRTM35018-SPI (ILI9488 controller, 3.5" TFT, 480×320 landscape, RGB666 18-bit color)
 - **OBD2:** ELM327 v1.5 Bluetooth Classic (38400 baud, ISO 15765-4 CAN)
 - **Power:** USB-C 5V/2A minimum
+
+### Display Specifications
+- **Model:** KMRTM35018-SPI
+- **Controller:** ILI9488
+- **Native Resolution:** 320×480 (portrait), rotated to 480×320 (landscape via MADCTL)
+- **Color Format:** RGB666 (18-bit, 3 bytes per pixel)
+- **Interface:** SPI (tested up to 20MHz)
+- **Power Requirements:**
+  - VCC: 5V (NOT 3.3V - critical!)
+  - LED (backlight): 3.3V or 5V
+  - Logic pins: 3.3V compatible
 
 ## Architecture
 
@@ -55,14 +66,28 @@ src/
 
 ### Display (ILI9488 via SPI)
 ```python
-PIN_MOSI = 23  # SPI Data Out
-PIN_MISO = 19  # SPI Data In
+PIN_MOSI = 23  # SPI Data Out (SDI on display)
+PIN_MISO = 19  # SPI Data In (SDO on display)
 PIN_SCK = 18   # SPI Clock
-PIN_CS = 15    # Chip Select
-PIN_DC = 2     # Data/Command
+PIN_CS = 5     # Chip Select (CRITICAL: NOT GPIO 15 - strapping pin!)
+PIN_DC = 2     # Data/Command (may be labeled RS on some displays)
 PIN_RST = 4    # Reset
 TOUCH_CS = 21  # Touch controller CS (XPT2046)
 ```
+
+**IMPORTANT NOTES:**
+- **GPIO 15 CANNOT be used for CS** - it's a strapping pin that causes SPI communication issues. Use GPIO 5 instead.
+- VCC must be connected to **5V**, not 3.3V (see Power Requirements above)
+- LED (backlight) can be connected to 3.3V or 5V
+
+### SPI Configuration
+```python
+spi = SPI(2, baudrate=20000000, polarity=0, phase=0,
+          sck=Pin(PIN_SCK), mosi=Pin(PIN_MOSI), miso=Pin(PIN_MISO))
+```
+- **Bus:** SPI(2) - tested and working
+- **Baudrate:** 10-20MHz recommended (40MHz may work but not tested thoroughly)
+- **Mode:** 0 (CPOL=0, CPHA=0)
 
 ### Bluetooth (ELM327 via UART2)
 Bluetooth Classic SPP uses UART2 internally - no physical wiring needed between ESP32 and ELM327.
@@ -134,7 +159,27 @@ Always acquire lock before reading/writing this dictionary.
 
 ## Display Implementation
 
-### Color Constants (RGB565 in display/colors.py)
+### Display Initialization (driver.py)
+The ILI9488 is initialized with these critical settings:
+```python
+# Pixel format: RGB666 (18-bit, 3 bytes per pixel)
+CMD_COLMOD: 0x66
+
+# Memory Access Control: Landscape orientation (480×320)
+CMD_MADCTL: 0xE8  # MY=1, MX=1, MV=1, BGR=1
+# - MY (bit 7): Row address order reversed
+# - MX (bit 6): Column address order reversed
+# - MV (bit 5): Row/column exchange (enables landscape)
+# - BGR (bit 3): BGR color order
+```
+
+**Why RGB666 instead of RGB565:**
+- ILI9488 native format is RGB666 (18-bit)
+- Better color accuracy and display compatibility
+- Driver automatically converts RGB565 color constants to RGB666
+
+### Color Constants (RGB565 format in display/colors.py)
+Colors are defined in RGB565 format but **automatically converted to RGB666** by the driver:
 ```python
 BLACK = 0x0000   # Background
 WHITE = 0xFFFF   # Text values
@@ -144,11 +189,23 @@ CYAN = 0x07FF    # Headers
 YELLOW = 0xFFE0  # Status
 ```
 
-### Text Rendering
-- Font: 8×8 monospace bitmap
-- Scaling: 1x, 2x, 3x via size parameter
-- ASCII support: 32-126
-- No framebuffer - direct SPI writes only
+The `rgb565_to_rgb666()` method in driver.py handles conversion automatically.
+
+### Text Rendering (Optimized Buffered Approach)
+- **Font:** 8×8 monospace bitmap
+- **Scaling:** 1x, 2x, 3x via size parameter
+- **ASCII support:** 32-126
+- **Rendering method:** Single buffered write per character
+  - Pre-renders entire character to buffer (including background)
+  - Sets display window once per character
+  - Writes entire buffer in single SPI transaction
+  - **~50-100x faster** than pixel-by-pixel rendering
+- **No framebuffer:** Direct SPI writes only
+
+### Drawing Performance
+- **Rectangles:** Very fast (optimized chunked writes with watchdog yields)
+- **Text:** Fast (single buffered write per character)
+- **Single pixels:** Slower (use sparingly, prefer rectangles)
 
 ### Screen Layout (480×320)
 ```
@@ -189,19 +246,64 @@ def mock_elm327_response(pid):
     return responses.get(pid, '41 00 00')
 ```
 
-## Common Issues
+## Common Issues & Troubleshooting
 
-### Hardware
-- Display black: Check CS/DC/RST pins, verify 3.3V power and SPI wiring
-- No ELM327 response: Vehicle ignition must be ON, verify 38400 baud
-- Display garbage: Wrong SPI clock polarity/phase
-- Touch not working: Ensure separate CS pin (TOUCH_CS=21)
+### Hardware Issues
 
-### Software
-- Import errors: Upload entire directory structure to ESP32 (src/ with subdirs)
-- Memory errors: Add `gc.collect()` after large operations
-- Timeout errors: Increase ELM327 timeout to 1000-2000ms in bluetooth.py
-- Parse errors: ELM327 response format varies (handled in parser.py)
+#### Display Shows All White or Backlight Only
+1. **VCC voltage wrong:** KMRTM35018-SPI requires **5V for VCC**, not 3.3V
+   - Connect VCC to ESP32 VIN (5V) when powered via USB
+   - LED/backlight can use 3.3V
+2. **Wrong CS pin:** Using GPIO 15 causes SPI communication to hang
+   - **Solution:** Use GPIO 5 for CS (configured in config.py)
+3. **Missing __init__.py files:** Display/OBD2 modules won't import
+   - Ensure `display/__init__.py` and `obd2/__init__.py` exist on ESP32
+
+#### Display Shows Wrong Orientation or Mirrored
+- **MADCTL value incorrect:** Must be 0xE8 for correct 480×320 landscape
+- Located in `display/driver.py` initialization sequence
+- Wrong MADCTL causes portrait mode or mirrored display
+
+#### SPI Communication Hangs
+- **GPIO 15 issue:** ESP32 strapping pin, cannot be used for CS
+- **Watchdog timeout:** Large operations need `time.sleep_us(50)` yields
+- **MISO pin issues:** Try removing MISO parameter from SPI init (write-only mode)
+
+#### Display Black Screen
+- Check backlight LED pin connection (needs 3.3V or 5V)
+- Verify SPI wiring: MOSI→SDI, SCK→SCK, CS→CS, DC→DC/RS, RST→RST
+- Test with simple fill commands before complex rendering
+
+### Software Issues
+
+#### Module Import Errors
+- **Missing __init__.py:** Both `display/` and `obd2/` folders need `__init__.py` files
+- **Wrong directory structure:** Files must be uploaded from `src/` contents to ESP32 root
+  - NOT: `/src/display/driver.py`
+  - YES: `/display/driver.py`
+- **File upload tool:** Use MicroPico "sync_folder": "src" in .micropico.json
+
+#### Slow Text Rendering
+- **Old implementation:** Character rendering must use buffered approach
+- Check `writer.py` char() method uses single buffer write, not pixel-by-pixel
+- Expected: Text renders as fast as rectangles
+
+#### Memory Errors
+- Add `gc.collect()` after large display operations
+- Use chunked writes for large fills (see fill_rect implementation)
+- Monitor with `gc.mem_free()` during development
+
+#### OBD2 Connection Issues
+- **No ELM327 response:** Vehicle ignition must be in ON or ACC position
+- **Timeout errors:** Increase timeout to 1000-2000ms in bluetooth.py
+- **Parse errors:** ELM327 response format varies by clone (handled in parser.py)
+- **MAC address:** Pair with phone first to find correct MAC address
+
+### ESP32 Boot Issues
+- **Won't boot with display connected:** GPIO 15 (strapping pin) conflict
+  - Must use GPIO 5 for CS instead
+- **Import errors on boot:** Check boot.py adds `/src` to sys.path
+- **Watchdog resets:** Add yields in long operations
 
 ## Adding New PIDs
 
@@ -214,12 +316,13 @@ def mock_elm327_response(pid):
 
 ## Known Limitations
 
-- PID 0x42 (battery voltage) not available on all Corsa D ECUs
-- ELM327 clones may have inconsistent AT command support
-- Bluetooth pairing must be done manually (PIN: 1234)
-- Display limited to ~10-15 FPS (SPI bandwidth)
-- Touch input not implemented
-- No framebuffer (no partial updates possible)
+- **PID 0x42 (battery voltage):** Not available on all Corsa D ECUs
+- **ELM327 clones:** May have inconsistent AT command support
+- **Bluetooth pairing:** Must be done manually (PIN: 1234 or 0000)
+- **Display refresh rate:** Limited to ~1-2 Hz for full screen updates (by design to reduce CPU load)
+- **No framebuffer:** Direct SPI writes only, no partial screen updates
+- **GPIO constraints:** Cannot use GPIO 15 (strapping pin), GPIO 5 required for CS
+- **Power requirements:** Display requires 5V for VCC (ESP32 must be powered via USB/VIN)
 
 ## Touch UI
 
@@ -243,22 +346,59 @@ touch.set_calibration(x_min=300, x_max=3900, y_min=300, y_max=3900)
 
 ## Deployment to ESP32
 
-Upload entire src/ directory structure to ESP32:
+### Required File Structure on ESP32
+Upload the **contents** of `src/` directory to ESP32 root:
 ```
-/config.py           # IMPORTANT: Edit MAC address first!
-/main.py
-/display/
-  driver.py
-  colors.py
-  writer.py
-  touch.py
-  button.py
-/obd2/
-  bluetooth.py
-  commands.py
-  parser.py
+/ (ESP32 root)
+├── config.py           # IMPORTANT: Edit MAC address first!
+├── main.py
+├── display/
+│   ├── __init__.py     # REQUIRED for Python module import
+│   ├── driver.py
+│   ├── colors.py
+│   ├── writer.py
+│   ├── touch.py
+│   ├── button.py
+│   ├── dialog.py
+│   └── pages.py
+└── obd2/
+    ├── __init__.py     # REQUIRED for Python module import
+    ├── bluetooth.py
+    ├── commands.py
+    └── parser.py
 ```
 
-Use tools like `ampy`, `rshell`, or Thonny IDE for file transfer. MicroPython supports subdirectories for module imports.
+### Upload Methods
 
-**Before first run:** Edit `config.py` with your ELM327 MAC address!
+#### Option 1: VS Code with MicroPico (Recommended)
+1. Configure `.micropico.json` with `"sync_folder": "src"`
+2. Use Command Palette: "MicroPico: Upload project to Pico"
+3. Reset ESP32
+
+#### Option 2: mpremote
+```bash
+cd F:\programming\claude\obdeck\src
+mpremote connect auto fs cp -r . :
+mpremote connect auto reset
+```
+
+#### Option 3: Thonny IDE
+1. Open Thonny, connect to ESP32
+2. Navigate to `src/` folder in local files
+3. Select all files and folders
+4. Right-click → "Upload to /"
+
+### Pre-Deployment Checklist
+- ✅ Edit `config.py` with your ELM327 MAC address
+- ✅ Verify `display/__init__.py` exists
+- ✅ Verify `obd2/__init__.py` exists
+- ✅ CS pin wired to GPIO 5 (not GPIO 15)
+- ✅ VCC connected to 5V (not 3.3V)
+- ✅ LED/backlight connected to 3.3V or 5V
+
+### Post-Deployment Testing
+After uploading, the display should:
+1. Show "Opel Corsa D - OBD2" header
+2. Display "Connection Failed!" with reconnect button (if vehicle off)
+3. Respond to touch input on reconnect button
+4. Text and graphics render quickly (no lag)

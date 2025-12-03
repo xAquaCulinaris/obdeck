@@ -134,7 +134,11 @@ def obd2_thread():
     bt_connection = BluetoothConnection(
         mac_address=config.BT_MAC_ADDRESS,
         pin=config.BT_PIN,
-        auto_try_pins=config.BT_AUTO_TRY_PINS
+        auto_try_pins=config.BT_AUTO_TRY_PINS,
+        uart_id=UART_ID,
+        tx_pin=BT_TX,
+        rx_pin=BT_RX,
+        device_name=config.BT_DEVICE_NAME if hasattr(config, 'BT_DEVICE_NAME') else None
     )
 
     # Connect to ELM327 via Bluetooth

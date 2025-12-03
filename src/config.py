@@ -17,7 +17,14 @@ TOUCH_CS = 21
 # ELM327 MAC address - Find this by pairing with your phone first
 # Format: "AA:BB:CC:DD:EE:FF"
 # Example dummy MAC (replace with your actual ELM327 MAC):
-BT_MAC_ADDRESS = "00:1D:A5:68:98:8B"
+BT_MAC_ADDRESS = "9c:9c:1f:c7:63:a6"
+
+# Bluetooth device name (for BTM mode)
+# This is the advertised name of your ELM327 device
+# Common names: "ESP32", "OBDII", "ELM327", "ESP_SPP_SERVER"
+# If None, will automatically try common names
+# Check your ELM327 emulator code for the exact name
+BT_DEVICE_NAME = "OBDII"  # Set to specific name like "ESP32" if known
 
 # ELM327 pairing PIN - Try this PIN when connecting
 # Common PINs: "1234", "0000", "6789"
