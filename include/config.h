@@ -82,7 +82,7 @@
 #define ELM327_INIT_DELAY_MS    2000   // Wait 2s after connection
 
 // OBD2 Query Settings
-#define OBD2_QUERY_INTERVAL_MS  500    // 2 Hz = query every 500ms
+#define OBD2_QUERY_INTERVAL_MS  200    // 5 Hz = query every 200ms (faster updates!)
 #define OBD2_MAX_RETRIES        3      // Retry failed queries 3 times
 
 // Supported PIDs (Mode 01)

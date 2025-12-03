@@ -325,6 +325,10 @@ void obd2Task(void *parameter) {
 
     Serial.println("[OBD2 Task] Starting query loop...\n");
 
+    // Track consecutive failures to detect disconnection
+    int consecutive_failures = 0;
+    const int MAX_FAILURES_BEFORE_DISCONNECT = 3;
+
     while (true) {
         uint8_t current_pid = pids[pid_index];
         float value = 0;
@@ -411,9 +415,52 @@ void obd2Task(void *parameter) {
                 break;
         }
 
-        // Check for errors
+        // Check for errors and track consecutive failures
         if (!success) {
             Serial.printf("PID 0x%02X query failed\n", current_pid);
+            consecutive_failures++;
+
+            // If too many consecutive failures, assume disconnected
+            if (consecutive_failures >= MAX_FAILURES_BEFORE_DISCONNECT) {
+                Serial.printf("[OBD2 Task] %d consecutive failures - connection lost!\n", consecutive_failures);
+
+                // Mark as disconnected
+                xSemaphoreTake(data_mutex, portMAX_DELAY);
+                obd_data.connected = false;
+                snprintf(obd_data.error, sizeof(obd_data.error), "Connection lost (timeout)");
+                xSemaphoreGive(data_mutex);
+
+                // Close existing connection
+                SerialBT.end();
+                delay(1000);
+
+                // Reinitialize Bluetooth
+                SerialBT.begin("OBDECK", true);
+                delay(1000);
+
+                // Wait before attempting reconnect
+                Serial.println("[OBD2 Task] Waiting 5 seconds before reconnect...");
+                vTaskDelay(pdMS_TO_TICKS(5000));
+
+                // Attempt to reconnect
+                Serial.println("[OBD2 Task] Attempting to reconnect...");
+                if (connectToELM327()) {
+                    Serial.println("[OBD2 Task] Reconnected successfully!");
+                    xSemaphoreTake(data_mutex, portMAX_DELAY);
+                    obd_data.connected = true;
+                    obd_data.error[0] = '\0';
+                    xSemaphoreGive(data_mutex);
+                    consecutive_failures = 0;  // Reset failure counter
+                } else {
+                    Serial.println("[OBD2 Task] Reconnection failed, will retry...");
+                    consecutive_failures = 0;  // Reset to try again
+                    vTaskDelay(pdMS_TO_TICKS(2000));
+                    continue;  // Skip to next iteration
+                }
+            }
+        } else {
+            // Success - reset failure counter
+            consecutive_failures = 0;
         }
 
         // Move to next PID
@@ -491,7 +538,7 @@ void drawCurrentPage() {
         tft.fillScreen(COLOR_BLACK);
 
         // Draw top bar
-        drawTopBar(VEHICLE_NAME, page_name, status_color, dtc_count);
+        drawTopBar("OBDeck", page_name, status_color, dtc_count);
 
         // Draw bottom navigation
         drawBottomNav(current_page);
@@ -511,17 +558,33 @@ void drawCurrentPage() {
     }
 
     if (!data_copy.connected) {
-        // Show connection error
-        tft.setTextColor(COLOR_RED, COLOR_BLACK);
-        tft.setTextSize(3);
-        tft.setCursor(80, 140);
-        tft.print("NOT CONNECTED");
+        // Show connection error - prominent and centered
+        int center_y = CONTENT_Y_START + (CONTENT_HEIGHT / 2) - 60;
 
+        // Red box background
+        tft.fillRect(50, center_y, SCREEN_WIDTH - 100, 120, COLOR_DARKGRAY);
+        tft.drawRect(50, center_y, SCREEN_WIDTH - 100, 120, COLOR_RED);
+        tft.drawRect(51, center_y + 1, SCREEN_WIDTH - 102, 118, COLOR_RED);
+
+        // "Connection Lost" text
+        tft.setTextColor(COLOR_RED, COLOR_DARKGRAY);
+        tft.setTextSize(3);
+        tft.setCursor(80, center_y + 20);
+        tft.print("Connection Lost");
+
+        // Error message
         if (data_copy.error[0] != '\0') {
+            tft.setTextColor(COLOR_WHITE, COLOR_DARKGRAY);
             tft.setTextSize(1);
-            tft.setCursor(10, 180);
-            tft.printf("Error: %s", data_copy.error);
+            tft.setCursor(70, center_y + 55);
+            tft.print(data_copy.error);
         }
+
+        // Reconnecting message
+        tft.setTextColor(COLOR_YELLOW, COLOR_DARKGRAY);
+        tft.setTextSize(2);
+        tft.setCursor(90, center_y + 80);
+        tft.print("Reconnecting...");
     } else {
         // Draw page content based on current page
         if (current_page == PAGE_DASHBOARD) {
