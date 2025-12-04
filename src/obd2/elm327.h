@@ -20,6 +20,17 @@
 // SHARED DATA STRUCTURE
 // ============================================================================
 
+// DTC severity levels
+#define DTC_SEVERITY_INFO       0
+#define DTC_SEVERITY_WARNING    1
+#define DTC_SEVERITY_CRITICAL   2
+
+struct DTC {
+    char code[6];           // e.g., "P0133"
+    char description[80];   // e.g., "O2 Sensor Slow Response"
+    uint8_t severity;       // 0=info, 1=warning, 2=critical
+};
+
 struct OBDData {
     float coolant_temp;      // °C
     uint16_t rpm;            // RPM
@@ -29,6 +40,11 @@ struct OBDData {
     float throttle;          // %
     bool connected;          // ELM327 connection status
     char error[64];          // Error message
+
+    // Diagnostic Trouble Codes
+    DTC dtc_codes[12];       // Store up to 12 DTCs
+    uint8_t dtc_count;       // Number of active DTCs
+    bool dtc_fetched;        // Whether DTCs have been fetched
 };
 
 // ============================================================================
@@ -75,6 +91,16 @@ float queryCoolantTemp();
 float queryThrottle();
 float queryIntakeTemp();
 float queryBatteryVoltage();
+
+/**
+ * DTC Functions
+ */
+void queryDTCs();
+void parseDTC(uint16_t dtc_value, char* code);
+const char* getDTCDescription(const char* code);
+uint8_t getDTCSeverity(const char* code);
+void sortDTCsBySeverity();
+bool clearAllDTCs();  // Clear all DTCs from ECU (Mode 04)
 
 /**
  * Main OBD2 communication task (runs on Core 0)

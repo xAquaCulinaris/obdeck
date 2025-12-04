@@ -161,6 +161,218 @@ float queryBatteryVoltage() {
 }
 
 // ============================================================================
+// DTC FUNCTIONS
+// ============================================================================
+
+/**
+ * Parse DTC value to code string
+ * DTC format: 2 bytes encode the code
+ * First 2 bits: prefix (00=P, 01=C, 10=B, 11=U)
+ * Next 2 bits: first digit
+ * Last 12 bits: last 3 digits
+ */
+void parseDTC(uint16_t dtc_value, char* code) {
+    // Extract parts
+    uint8_t prefix = (dtc_value >> 14) & 0x03;
+    uint8_t digit1 = (dtc_value >> 12) & 0x03;
+    uint8_t digit2 = (dtc_value >> 8) & 0x0F;
+    uint8_t digit3 = (dtc_value >> 4) & 0x0F;
+    uint8_t digit4 = dtc_value & 0x0F;
+
+    // Determine prefix letter
+    char prefix_char;
+    switch (prefix) {
+        case 0: prefix_char = 'P'; break;  // Powertrain
+        case 1: prefix_char = 'C'; break;  // Chassis
+        case 2: prefix_char = 'B'; break;  // Body
+        case 3: prefix_char = 'U'; break;  // Network
+        default: prefix_char = 'P'; break;
+    }
+
+    // Format code
+    snprintf(code, 6, "%c%d%X%X%X", prefix_char, digit1, digit2, digit3, digit4);
+}
+
+/**
+ * Get DTC description from code
+ */
+const char* getDTCDescription(const char* code) {
+    // Common OBD2 codes database (add more as needed)
+    if (strcmp(code, "P0133") == 0) return "O2 Sensor Slow Response";
+    if (strcmp(code, "P0244") == 0) return "Wastegate Solenoid";
+    if (strcmp(code, "P0300") == 0) return "Random Misfire Detected";
+    if (strcmp(code, "P0420") == 0) return "Catalyst System Low Efficiency";
+    if (strcmp(code, "P0171") == 0) return "System Too Lean (Bank 1)";
+    if (strcmp(code, "P0172") == 0) return "System Too Rich (Bank 1)";
+    if (strcmp(code, "P0440") == 0) return "EVAP System Malfunction";
+    if (strcmp(code, "P0442") == 0) return "EVAP System Small Leak";
+    if (strcmp(code, "P0455") == 0) return "EVAP System Large Leak";
+    if (strcmp(code, "P0101") == 0) return "MAF Sensor Range/Performance";
+    if (strcmp(code, "P0113") == 0) return "Intake Air Temp High Input";
+    if (strcmp(code, "P0128") == 0) return "Coolant Temp Below Thermostat";
+
+    return "Unknown DTC";  // Default for unknown codes
+}
+
+/**
+ * Get DTC severity level
+ */
+uint8_t getDTCSeverity(const char* code) {
+    // Critical codes (engine damage risk)
+    if (strcmp(code, "P0300") == 0) return DTC_SEVERITY_CRITICAL;  // Misfire
+    if (strcmp(code, "P0301") == 0) return DTC_SEVERITY_CRITICAL;  // Cylinder 1 misfire
+    if (strcmp(code, "P0302") == 0) return DTC_SEVERITY_CRITICAL;  // Cylinder 2 misfire
+    if (strcmp(code, "P0303") == 0) return DTC_SEVERITY_CRITICAL;  // Cylinder 3 misfire
+    if (strcmp(code, "P0304") == 0) return DTC_SEVERITY_CRITICAL;  // Cylinder 4 misfire
+
+    // Warning codes (performance/emissions)
+    if (strcmp(code, "P0420") == 0) return DTC_SEVERITY_WARNING;   // Catalyst
+    if (strcmp(code, "P0171") == 0) return DTC_SEVERITY_WARNING;   // Lean
+    if (strcmp(code, "P0172") == 0) return DTC_SEVERITY_WARNING;   // Rich
+    if (strcmp(code, "P0440") == 0) return DTC_SEVERITY_WARNING;   // EVAP
+    if (strcmp(code, "P0442") == 0) return DTC_SEVERITY_WARNING;   // EVAP leak
+    if (strcmp(code, "P0455") == 0) return DTC_SEVERITY_WARNING;   // EVAP leak
+
+    // Info/minor codes
+    return DTC_SEVERITY_INFO;  // Default
+}
+
+/**
+ * Sort DTCs by severity (critical first, then warning, then info)
+ */
+void sortDTCsBySeverity() {
+    // Simple bubble sort by severity (critical = 2, warning = 1, info = 0)
+    for (int i = 0; i < obd_data.dtc_count - 1; i++) {
+        for (int j = 0; j < obd_data.dtc_count - i - 1; j++) {
+            if (obd_data.dtc_codes[j].severity < obd_data.dtc_codes[j + 1].severity) {
+                // Swap
+                DTC temp = obd_data.dtc_codes[j];
+                obd_data.dtc_codes[j] = obd_data.dtc_codes[j + 1];
+                obd_data.dtc_codes[j + 1] = temp;
+            }
+        }
+    }
+}
+
+/**
+ * Query DTCs from vehicle
+ * Mode 03: Request stored DTCs
+ */
+void queryDTCs() {
+    Serial.println("[DTC] Querying diagnostic trouble codes...");
+
+    // Send Mode 03 command
+    String response = sendOBD2Command("03");
+
+    Serial.printf("[DTC] Response: %s\n", response.c_str());
+
+    // Parse response
+    // Response format: "43 [count] [DTC1_H] [DTC1_L] [DTC2_H] [DTC2_L] ..."
+    int startPos = response.indexOf("43");
+    if (startPos < 0) {
+        Serial.println("[DTC] No DTCs found or invalid response");
+        xSemaphoreTake(data_mutex, portMAX_DELAY);
+        obd_data.dtc_count = 0;
+        obd_data.dtc_fetched = true;
+        xSemaphoreGive(data_mutex);
+        return;
+    }
+
+    // Skip "43 " to get to data
+    String data = response.substring(startPos + 3);
+    data.trim();
+
+    // Parse hex bytes
+    int dtc_index = 0;
+    int pos = 0;
+
+    xSemaphoreTake(data_mutex, portMAX_DELAY);
+
+    while (pos < data.length() && dtc_index < 12) {
+        // Skip spaces
+        while (pos < data.length() && data[pos] == ' ') pos++;
+        if (pos >= data.length()) break;
+
+        // Read high byte
+        String high_byte_str = data.substring(pos, pos + 2);
+        pos += 2;
+        while (pos < data.length() && data[pos] == ' ') pos++;
+        if (pos >= data.length()) break;
+
+        // Read low byte
+        String low_byte_str = data.substring(pos, pos + 2);
+        pos += 2;
+
+        // Convert to DTC value
+        uint8_t high_byte = strtol(high_byte_str.c_str(), NULL, 16);
+        uint8_t low_byte = strtol(low_byte_str.c_str(), NULL, 16);
+        uint16_t dtc_value = (high_byte << 8) | low_byte;
+
+        // Skip if 0x0000 (no more DTCs)
+        if (dtc_value == 0x0000) break;
+
+        // Parse DTC code
+        parseDTC(dtc_value, obd_data.dtc_codes[dtc_index].code);
+
+        // Get description and severity
+        const char* desc = getDTCDescription(obd_data.dtc_codes[dtc_index].code);
+        strncpy(obd_data.dtc_codes[dtc_index].description, desc, 79);
+        obd_data.dtc_codes[dtc_index].description[79] = '\0';
+        obd_data.dtc_codes[dtc_index].severity = getDTCSeverity(obd_data.dtc_codes[dtc_index].code);
+
+        Serial.printf("[DTC] Found: %s - %s (severity=%d)\n",
+                      obd_data.dtc_codes[dtc_index].code,
+                      obd_data.dtc_codes[dtc_index].description,
+                      obd_data.dtc_codes[dtc_index].severity);
+
+        dtc_index++;
+    }
+
+    obd_data.dtc_count = dtc_index;
+    obd_data.dtc_fetched = true;
+
+    xSemaphoreGive(data_mutex);
+
+    // Sort by severity
+    if (obd_data.dtc_count > 0) {
+        xSemaphoreTake(data_mutex, portMAX_DELAY);
+        sortDTCsBySeverity();
+        xSemaphoreGive(data_mutex);
+    }
+
+    Serial.printf("[DTC] Total DTCs found: %d\n", obd_data.dtc_count);
+}
+
+/**
+ * Clear all DTCs from ECU
+ * Mode 04: Clear diagnostic information
+ */
+bool clearAllDTCs() {
+    Serial.println("[DTC] Clearing all DTCs from ECU...");
+
+    // Send Mode 04 command
+    String response = sendOBD2Command("04");
+
+    Serial.printf("[DTC] Clear response: %s\n", response.c_str());
+
+    // Check for positive response (44 = Mode 04 response)
+    if (response.indexOf("44") >= 0) {
+        Serial.println("[DTC] DTCs cleared successfully from ECU");
+
+        // Clear local DTC list
+        xSemaphoreTake(data_mutex, portMAX_DELAY);
+        obd_data.dtc_count = 0;
+        obd_data.dtc_fetched = true;
+        xSemaphoreGive(data_mutex);
+
+        return true;
+    } else {
+        Serial.println("[DTC] Failed to clear DTCs");
+        return false;
+    }
+}
+
+// ============================================================================
 // CONNECTION MANAGEMENT
 // ============================================================================
 
@@ -260,7 +472,15 @@ void obd2Task(void *parameter) {
     xSemaphoreTake(data_mutex, portMAX_DELAY);
     obd_data.connected = true;
     obd_data.error[0] = '\0';
+    obd_data.dtc_fetched = false;
     xSemaphoreGive(data_mutex);
+
+    // Wait a bit for connection to stabilize before querying DTCs
+    Serial.println("[OBD2 Task] Waiting 3 seconds before querying DTCs...");
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // Query DTCs once after connection
+    queryDTCs();
 
     // PID query rotation
     uint8_t pid_index = 0;

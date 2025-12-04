@@ -38,7 +38,7 @@ TFT_eSPI tft = TFT_eSPI();
 XPT2046_Touchscreen touch(TOUCH_CS);
 
 // Current page state
-Page current_page = PAGE_DASHBOARD;
+Page current_page = PAGE_DTC;  // Start with DTC page (until touch is working)
 bool page_needs_redraw = true;
 
 // ============================================================================
@@ -70,7 +70,10 @@ void drawCurrentPage() {
     static float last_battery = -999;
     static float last_intake = -999;
     static bool last_connected = false;
+    static uint8_t last_dtc_count = 0xFF;  // Track DTC count changes
     static bool needs_full_redraw = true;
+    static bool disconnection_screen_drawn = false;  // Track if disconnection screen is already drawn
+    static uint8_t animation_state = 0;  // For animated dots (0-3)
 
     draw_count++;
 
@@ -86,8 +89,11 @@ void drawCurrentPage() {
                       draw_count, data_copy.connected, current_page);
     }
 
-    // Check if full redraw is needed
-    bool do_full_redraw = (page_needs_redraw || data_copy.connected != last_connected || needs_full_redraw);
+    // Check if full redraw is needed (including when DTCs change)
+    bool do_full_redraw = (page_needs_redraw ||
+                           data_copy.connected != last_connected ||
+                           data_copy.dtc_count != last_dtc_count ||
+                           needs_full_redraw);
 
     // Determine page name
     const char* page_name;
@@ -98,9 +104,21 @@ void drawCurrentPage() {
         default:             page_name = "Unknown"; break;
     }
 
-    // Determine status color
-    uint16_t status_color = data_copy.connected ? STATUS_OK : STATUS_ERROR;
-    int dtc_count = 0;  // TODO: Implement DTC reading
+    // Determine status color (red if DTCs present)
+    uint16_t status_color = STATUS_OK;
+    if (!data_copy.connected) {
+        status_color = STATUS_ERROR;
+    } else if (data_copy.dtc_count > 0) {
+        // Check for critical DTCs
+        bool has_critical = false;
+        for (int i = 0; i < data_copy.dtc_count; i++) {
+            if (data_copy.dtc_codes[i].severity == DTC_SEVERITY_CRITICAL) {
+                has_critical = true;
+                break;
+            }
+        }
+        status_color = has_critical ? STATUS_ERROR : STATUS_WARNING;
+    }
 
     // Full redraw if page changed or connection state changed
     if (do_full_redraw) {
@@ -108,14 +126,20 @@ void drawCurrentPage() {
         tft.fillScreen(COLOR_BLACK);
 
         // Draw top bar
-        drawTopBar("OBDeck", page_name, status_color, dtc_count);
+        drawTopBar("OBDeck", page_name, status_color, data_copy.dtc_count);
 
         // Draw bottom navigation
         drawBottomNav(current_page);
 
+        // Reset DTC scroll when switching to DTC page
+        if (current_page == PAGE_DTC) {
+            resetDTCScroll();
+        }
+
         // Reset flags
         page_needs_redraw = false;
         last_connected = data_copy.connected;
+        last_dtc_count = data_copy.dtc_count;
         needs_full_redraw = false;
 
         // Force redraw of all values
@@ -125,37 +149,60 @@ void drawCurrentPage() {
         last_throttle = -999;
         last_battery = -999;
         last_intake = -999;
+
+        // Clear content area only on full redraw
+        tft.fillRect(0, CONTENT_Y_START, SCREEN_WIDTH, CONTENT_HEIGHT, COLOR_BLACK);
     }
 
     if (!data_copy.connected) {
         // Show connection error - prominent and centered
         int center_y = CONTENT_Y_START + (CONTENT_HEIGHT / 2) - 60;
 
-        // Red box background
-        tft.fillRect(50, center_y, SCREEN_WIDTH - 100, 120, COLOR_DARKGRAY);
-        tft.drawRect(50, center_y, SCREEN_WIDTH - 100, 120, COLOR_RED);
-        tft.drawRect(51, center_y + 1, SCREEN_WIDTH - 102, 118, COLOR_RED);
+        // Draw static parts only once (no flickering)
+        if (!disconnection_screen_drawn || do_full_redraw) {
+            // Clear content area for connection error display
+            tft.fillRect(0, CONTENT_Y_START, SCREEN_WIDTH, CONTENT_HEIGHT, COLOR_BLACK);
 
-        // "Connection Lost" text
-        tft.setTextColor(COLOR_RED, COLOR_DARKGRAY);
-        tft.setTextSize(3);
-        tft.setCursor(80, center_y + 20);
-        tft.print("Connection Lost");
+            // Red box background
+            tft.fillRect(50, center_y, SCREEN_WIDTH - 100, 120, COLOR_DARKGRAY);
+            tft.drawRect(50, center_y, SCREEN_WIDTH - 100, 120, COLOR_RED);
+            tft.drawRect(51, center_y + 1, SCREEN_WIDTH - 102, 118, COLOR_RED);
 
-        // Error message
-        if (data_copy.error[0] != '\0') {
-            tft.setTextColor(COLOR_WHITE, COLOR_DARKGRAY);
-            tft.setTextSize(1);
-            tft.setCursor(70, center_y + 55);
-            tft.print(data_copy.error);
+            // "Connection Lost" text
+            tft.setTextColor(COLOR_RED, COLOR_DARKGRAY);
+            tft.setTextSize(3);
+            tft.setCursor(80, center_y + 20);
+            tft.print("Connection Lost");
+
+            // Error message
+            if (data_copy.error[0] != '\0') {
+                tft.setTextColor(COLOR_WHITE, COLOR_DARKGRAY);
+                tft.setTextSize(1);
+                tft.setCursor(70, center_y + 55);
+                tft.print(data_copy.error);
+            }
+
+            disconnection_screen_drawn = true;
         }
 
-        // Reconnecting message
+        // Animate "Reconnecting" with dots (updates every frame)
+        animation_state = (animation_state + 1) % 4;  // Cycle 0-3
+
+        // Clear animation area only
+        tft.fillRect(70, center_y + 75, 340, 35, COLOR_DARKGRAY);
+
         tft.setTextColor(COLOR_YELLOW, COLOR_DARKGRAY);
         tft.setTextSize(2);
         tft.setCursor(90, center_y + 80);
-        tft.print("Reconnecting...");
+        tft.print("Reconnecting");
+
+        // Draw animated dots
+        for (int i = 0; i < animation_state; i++) {
+            tft.print(".");
+        }
     } else {
+        // Reset disconnection screen flag when connected
+        disconnection_screen_drawn = false;
         // Draw page content based on current page
         if (current_page == PAGE_DASHBOARD) {
             // Smart partial updates for dashboard
@@ -178,7 +225,11 @@ void drawCurrentPage() {
             last_battery = data_copy.battery_voltage;
             last_intake = data_copy.intake_temp;
         } else if (current_page == PAGE_DTC) {
-            drawDTCPage(dtc_count);
+            // Draw DTC page only on full redraw (DTCs are static)
+            if (do_full_redraw) {
+                tft.fillRect(0, CONTENT_Y_START, SCREEN_WIDTH, CONTENT_HEIGHT, COLOR_BLACK);
+                drawDTCPage(data_copy.dtc_codes, data_copy.dtc_count);
+            }
         } else if (current_page == PAGE_CONFIG) {
             drawConfigPage();
         }
@@ -217,18 +268,30 @@ void setup() {
         Serial.println("✓ Touch controller initialized (currently disabled)");
     }
 
-    // Show startup message
+    // Show startup message with animated dots
     tft.setTextColor(COLOR_CYAN, COLOR_BLACK);
     tft.setTextSize(3);
     tft.setCursor(80, 100);
     tft.print("OBDeck");
 
-    tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-    tft.setTextSize(2);
-    tft.setCursor(100, 140);
-    tft.print("Connecting...");
+    // Animate "Connecting" with dots (8 cycles = ~2 seconds)
+    for (int i = 0; i < 8; i++) {
+        // Clear previous text
+        tft.fillRect(80, 135, 320, 30, COLOR_BLACK);
 
-    delay(2000);
+        tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
+        tft.setTextSize(2);
+        tft.setCursor(100, 140);
+        tft.print("Connecting");
+
+        // Draw dots (0-3)
+        int dots = i % 4;
+        for (int j = 0; j < dots; j++) {
+            tft.print(".");
+        }
+
+        delay(250);  // 250ms per frame = 4 fps
+    }
 
     // Start OBD2 task on Core 0
     xTaskCreatePinnedToCore(
