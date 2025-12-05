@@ -59,27 +59,29 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
             // Box border
             tft.drawRect(x, y, box_width, box_height, COLOR_GRAY);
 
-            // Label at top
+            // Label at top - use drawString instead of print
             tft.setTextColor(label_color, COLOR_BLACK);
             tft.setTextSize(2);
-            tft.setCursor(x + 10, y + 8);
-            tft.print(label);
+            tft.setTextDatum(TL_DATUM);
+            tft.setTextPadding(box_width - 20);
+            tft.drawString(label, x + 10, y + 8);
         }
 
         // Update value only if changed
         if (first_draw || force_redraw || strcmp(value, last_value) != 0) {
-            // Clear value area
+            // Draw new value (centered) - use drawString instead of print
             int value_y = y + 35;
-            tft.fillRect(x + 5, value_y, box_width - 10, box_height - 40, COLOR_BLACK);
-
-            // Draw new value (large and centered)
             tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
             tft.setTextSize(3);  // Size 3 for better fit
-            int text_width = strlen(value) * 18;  // Approximate width for size 3
-            int value_x = x + (box_width - text_width) / 2;
-            tft.setCursor(value_x, value_y + 10);
-            tft.print(value);
+            tft.setTextDatum(TC_DATUM);  // Top-center alignment
+            tft.setTextPadding(box_width - 10);  // Auto-clear old value
+            tft.drawString(value, x + (box_width / 2), value_y + 10);
         }
+
+        // Reset text settings to prevent corruption
+        tft.setTextPadding(0);
+        tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
+        tft.setTextSize(1);
     };
 
     // Format values

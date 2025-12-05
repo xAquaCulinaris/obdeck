@@ -20,9 +20,10 @@
 #define TFT_DC        2
 #define TFT_RST       4
 
-// Touch Controller (XPT2046)
-#define TOUCH_CS      21
-#define TOUCH_IRQ     -1  // Not connected
+// Physical Buttons (3-button navigation system)
+#define BTN_LEFT      16  // Navigate to previous UI button (D16)
+#define BTN_RIGHT     17  // Navigate to next UI button (D17)
+#define BTN_SELECT    22  // Activate highlighted UI button (D22)
 
 // SPI Configuration
 #define SPI_FREQUENCY       40000000  // 40 MHz for display

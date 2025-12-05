@@ -18,10 +18,10 @@
 #define TFT_SCLK 18
 #define TFT_CS   5   // Chip Select
 #define TFT_DC   2   // Data/Command
-#define TFT_RST  4   // Reset
+#define TFT_RST  -1  // Reset disabled - causes display issues when connected to GPIO 4
 
-// Touch controller (XPT2046)
-#define TOUCH_CS 21  // Touch chip select
+// Touch disabled (using physical buttons)
+#define TOUCH_CS -1  // Required by TFT_eSPI even when not using touch
 
 // Use VSPI (default for ESP32)
 #define VSPI_HOST
@@ -37,9 +37,9 @@
 // Smooth fonts
 #define SMOOTH_FONT
 
-// SPI Frequency
-#define SPI_FREQUENCY       40000000  // 40 MHz
-#define SPI_READ_FREQUENCY  20000000  // 20 MHz
+// SPI Frequency (reduced for ILI9488 stability - prevents white screen corruption)
+#define SPI_FREQUENCY       20000000  // 20 MHz (reduced from 27MHz for ILI9488 stability)
+#define SPI_READ_FREQUENCY  10000000  // 10 MHz
 #define SPI_TOUCH_FREQUENCY  2500000  // 2.5 MHz
 
 // Color depth (16-bit RGB565)

@@ -14,6 +14,13 @@ static int dtc_scroll_offset = 0;
 const int DTC_ITEMS_PER_PAGE = 4;  // Show 4 DTCs (more space for buttons)
 
 /**
+ * Get current DTC scroll offset
+ */
+inline int getDTCScrollOffset() {
+    return dtc_scroll_offset;
+}
+
+/**
  * Draw DTC codes page with improved layout
  * @param dtc_data Pointer to DTC data array
  * @param dtc_count Number of DTCs
