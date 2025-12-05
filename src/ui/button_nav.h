@@ -11,6 +11,7 @@
 #define BUTTON_NAV_H
 
 #include "ui_common.h"
+#include "../obd2/elm327.h"
 
 // ============================================================================
 // BUTTON GPIO PINS
@@ -57,8 +58,8 @@ static UIButton ui_buttons[] = {
     {BTN_NAV_CONFIG,    320, BOTTOM_NAV_Y, NAV_BUTTON_WIDTH, BOTTOM_NAV_HEIGHT, true, (Page)99},
 
     // DTC Page Buttons (only visible on DTC page)
-    {BTN_DTC_REFRESH, 300, CONTENT_Y_START + 3, 95, 26, true, PAGE_DTC},
-    {BTN_DTC_CLEAR,   400, CONTENT_Y_START + 3, 105, 26, true, PAGE_DTC},
+    {BTN_DTC_REFRESH, 290, CONTENT_Y_START + 3, 90, 26, true, PAGE_DTC},
+    {BTN_DTC_CLEAR,   390, CONTENT_Y_START + 3, 85, 26, true, PAGE_DTC},
     {BTN_DTC_UP,      80,  BOTTOM_NAV_Y - 48, 140, 38, false, PAGE_DTC},  // Enabled dynamically
     {BTN_DTC_DOWN,    260, BOTTOM_NAV_Y - 48, 140, 38, false, PAGE_DTC},  // Enabled dynamically
 };
@@ -104,9 +105,12 @@ inline void updateButtonVisibility(Page current_page, int dtc_count, int dtc_scr
     ui_buttons[BTN_NAV_CONFIG].enabled = true;
 
     // DTC page buttons
-    if (current_page == PAGE_DTC && dtc_count > 0) {
+    if (current_page == PAGE_DTC) {
+        // Refresh button always enabled on DTC page (even with 0 DTCs)
         ui_buttons[BTN_DTC_REFRESH].enabled = true;
-        ui_buttons[BTN_DTC_CLEAR].enabled = true;
+
+        // Clear button only enabled when there are DTCs to clear
+        ui_buttons[BTN_DTC_CLEAR].enabled = (dtc_count > 0);
 
         // Scroll buttons only if DTCs need scrolling
         if (dtc_count > 4) {  // DTC_ITEMS_PER_PAGE = 4
@@ -117,7 +121,7 @@ inline void updateButtonVisibility(Page current_page, int dtc_count, int dtc_scr
             ui_buttons[BTN_DTC_DOWN].enabled = false;
         }
     } else {
-        // Not on DTC page or no DTCs
+        // Not on DTC page - disable all DTC buttons
         ui_buttons[BTN_DTC_REFRESH].enabled = false;
         ui_buttons[BTN_DTC_CLEAR].enabled = false;
         ui_buttons[BTN_DTC_UP].enabled = false;
@@ -173,25 +177,44 @@ inline void drawButtonHighlight(int button_index, bool show) {
         return;
     }
 
-    uint16_t color = show ? COLOR_YELLOW : COLOR_GRAY;
-    int thickness = show ? 3 : 1;
+    if (show) {
+        // Draw yellow highlight (3 pixels thick)
+        for (int i = 0; i < 3; i++) {
+            int x = btn.x - i - 1;
+            int y = btn.y - i - 1;
+            int w = btn.w + ((i + 1) * 2);
+            int h = btn.h + ((i + 1) * 2);
 
-    // Draw thick border with bounds checking
-    for (int i = 0; i < thickness; i++) {
-        int x = btn.x - i;
-        int y = btn.y - i;
-        int w = btn.w + (i * 2);
-        int h = btn.h + (i * 2);
+            // Clamp to screen bounds
+            if (x < 0) { w += x; x = 0; }
+            if (y < 0) { h += y; y = 0; }
+            if (x + w > SCREEN_WIDTH) w = SCREEN_WIDTH - x;
+            if (y + h > SCREEN_HEIGHT) h = SCREEN_HEIGHT - y;
 
-        // Clamp to screen bounds
-        if (x < 0) { w += x; x = 0; }
-        if (y < 0) { h += y; y = 0; }
-        if (x + w > SCREEN_WIDTH) w = SCREEN_WIDTH - x;
-        if (y + h > SCREEN_HEIGHT) h = SCREEN_HEIGHT - y;
+            // Only draw if valid dimensions
+            if (w > 0 && h > 0) {
+                tft.drawRect(x, y, w, h, COLOR_YELLOW);
+            }
+        }
+    } else {
+        // Clear highlight by filling area around button with black (3 pixels thick)
+        // This completely removes the yellow highlight
+        for (int i = 0; i < 3; i++) {
+            int x = btn.x - i - 1;
+            int y = btn.y - i - 1;
+            int w = btn.w + ((i + 1) * 2);
+            int h = btn.h + ((i + 1) * 2);
 
-        // Only draw if valid dimensions
-        if (w > 0 && h > 0) {
-            tft.drawRect(x, y, w, h, color);
+            // Clamp to screen bounds
+            if (x < 0) { w += x; x = 0; }
+            if (y < 0) { h += y; y = 0; }
+            if (x + w > SCREEN_WIDTH) w = SCREEN_WIDTH - x;
+            if (y + h > SCREEN_HEIGHT) h = SCREEN_HEIGHT - y;
+
+            // Only draw if valid dimensions
+            if (w > 0 && h > 0) {
+                tft.drawRect(x, y, w, h, COLOR_BLACK);
+            }
         }
     }
 }
@@ -322,11 +345,19 @@ inline bool activateButton(Page& current_page, bool& page_needs_redraw, int dtc_
 
         // DTC Actions
         case BTN_DTC_REFRESH:
-            // TODO: Call requestDTCRefresh() when implemented
+            Serial.println("[Button] Refresh DTCs requested");
+            // Set flag for OBD2 task to handle (thread-safe)
+            xSemaphoreTake(data_mutex, portMAX_DELAY);
+            obd_data.dtc_refresh_requested = true;
+            xSemaphoreGive(data_mutex);
             return true;
 
         case BTN_DTC_CLEAR:
-            // TODO: Call clearAllDTCs() when implemented
+            Serial.println("[Button] Clear all DTCs requested");
+            // Set flag for OBD2 task to handle (thread-safe)
+            xSemaphoreTake(data_mutex, portMAX_DELAY);
+            obd_data.dtc_clear_requested = true;
+            xSemaphoreGive(data_mutex);
             return true;
 
         case BTN_DTC_UP:

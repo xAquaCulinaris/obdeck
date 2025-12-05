@@ -637,6 +637,45 @@ void obd2Task(void *parameter) {
         // Move to next PID
         pid_index = (pid_index + 1) % num_pids;
 
+        // Check for DTC operation requests (from UI thread)
+        bool dtc_refresh_req = false;
+        bool dtc_clear_req = false;
+
+        xSemaphoreTake(data_mutex, portMAX_DELAY);
+        dtc_refresh_req = obd_data.dtc_refresh_requested;
+        dtc_clear_req = obd_data.dtc_clear_requested;
+        xSemaphoreGive(data_mutex);
+
+        // Handle DTC Clear request
+        if (dtc_clear_req) {
+            Serial.println("[OBD2 Task] Processing DTC clear request...");
+            bool clear_success = clearAllDTCs();
+
+            xSemaphoreTake(data_mutex, portMAX_DELAY);
+            obd_data.dtc_clear_requested = false;  // Clear flag
+            xSemaphoreGive(data_mutex);
+
+            if (clear_success) {
+                Serial.println("[OBD2 Task] DTCs cleared successfully");
+                // Query DTCs to update display
+                queryDTCs();
+            } else {
+                Serial.println("[OBD2 Task] Failed to clear DTCs");
+            }
+        }
+
+        // Handle DTC Refresh request
+        if (dtc_refresh_req) {
+            Serial.println("[OBD2 Task] Processing DTC refresh request...");
+            queryDTCs();
+
+            xSemaphoreTake(data_mutex, portMAX_DELAY);
+            obd_data.dtc_refresh_requested = false;  // Clear flag
+            xSemaphoreGive(data_mutex);
+
+            Serial.println("[OBD2 Task] DTC refresh complete");
+        }
+
         // Wait before next query
         vTaskDelay(pdMS_TO_TICKS(OBD2_QUERY_INTERVAL_MS));
     }

@@ -42,12 +42,13 @@ inline void drawDTCPage(const DTC* dtc_data, int dtc_count) {
         tft.setCursor(80, center_y + 50);
         tft.print("No trouble codes found");
 
-        // Refresh button
-        tft.fillRect(150, center_y + 100, 180, 40, COLOR_BLUE);
-        tft.drawRect(150, center_y + 100, 180, 40, COLOR_WHITE);
+        // Refresh button (same position as when DTCs exist - top right)
+        int btn_y = CONTENT_Y_START + 3;
+        tft.fillRect(290, btn_y, 90, 26, COLOR_BLUE);
+        tft.drawRect(290, btn_y, 90, 26, COLOR_WHITE);
         tft.setTextColor(COLOR_WHITE, COLOR_BLUE);
         tft.setTextSize(2);
-        tft.setCursor(180, center_y + 112);
+        tft.setCursor(295, btn_y + 5);
         tft.print("REFRESH");
 
     } else {
@@ -61,23 +62,23 @@ inline void drawDTCPage(const DTC* dtc_data, int dtc_count) {
 
         tft.printf("%d DTC(s) Found | Page %d/%d", dtc_count, current_page, total_pages);
 
-        // Action buttons (top right) - larger size
+        // Action buttons (top right) - adjusted positions to fit on screen
         int btn_y = y - 2;
 
-        // Refresh button
-        tft.fillRect(300, btn_y, 95, 26, COLOR_BLUE);
-        tft.drawRect(300, btn_y, 95, 26, COLOR_WHITE);
+        // Refresh button (moved left to x=290, width=90)
+        tft.fillRect(290, btn_y, 90, 26, COLOR_BLUE);
+        tft.drawRect(290, btn_y, 90, 26, COLOR_WHITE);
         tft.setTextColor(COLOR_WHITE, COLOR_BLUE);
         tft.setTextSize(2);
-        tft.setCursor(307, btn_y + 5);
+        tft.setCursor(295, btn_y + 5);
         tft.print("REFRESH");
 
-        // Clear All button (red)
-        tft.fillRect(400, btn_y, 105, 26, COLOR_RED);
-        tft.drawRect(400, btn_y, 105, 26, COLOR_WHITE);
+        // Clear All button (moved left to x=390, width=85, red)
+        tft.fillRect(390, btn_y, 85, 26, COLOR_RED);
+        tft.drawRect(390, btn_y, 85, 26, COLOR_WHITE);
         tft.setTextColor(COLOR_WHITE, COLOR_RED);
         tft.setTextSize(2);
-        tft.setCursor(408, btn_y + 5);
+        tft.setCursor(398, btn_y + 5);
         tft.print("CLEAR");
 
         y += 25;

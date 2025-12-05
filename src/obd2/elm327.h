@@ -45,6 +45,10 @@ struct OBDData {
     DTC dtc_codes[12];       // Store up to 12 DTCs
     uint8_t dtc_count;       // Number of active DTCs
     bool dtc_fetched;        // Whether DTCs have been fetched
+
+    // DTC Request Flags (set by UI thread, cleared by OBD2 task)
+    bool dtc_refresh_requested;  // Request DTC refresh from ECU
+    bool dtc_clear_requested;    // Request clear all DTCs
 };
 
 // ============================================================================
