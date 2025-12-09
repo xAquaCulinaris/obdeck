@@ -20,6 +20,12 @@
 #define TFT_DC        2
 #define TFT_RST       4
 
+// IMPORTANT: Display Power Requirements
+// - VCC: Connect to 5V (ESP32 VIN), NOT 3.3V
+// - LED: Connect to 3.3V
+// - Add 1000µF capacitor between VCC and GND (close to display)
+// - This prevents power spikes when updating screen
+
 // Physical Buttons (3-button navigation system)
 #define BTN_LEFT      16  // Navigate to previous UI button (D16)
 #define BTN_RIGHT     17  // Navigate to next UI button (D17)
@@ -54,7 +60,8 @@
 
 // Display Rotation
 // 0 = Portrait, 1 = Landscape, 2 = Portrait flipped, 3 = Landscape flipped
-#define SCREEN_ROTATION 1  // Landscape (480x320)
+// Use 1 for normal landscape, use 3 for landscape flipped 180°
+#define SCREEN_ROTATION 3  // Landscape flipped 180° (480x320)
 
 // Display Settings
 #define DISPLAY_REFRESH_HZ  2      // 2 Hz = 2 updates per second

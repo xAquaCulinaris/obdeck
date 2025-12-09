@@ -22,39 +22,37 @@ inline void drawTopBar(const char* vehicle_name, const char* page_name,
                        uint16_t status_color, int dtc_count) {
     // Background
     tft.fillRect(0, 0, SCREEN_WIDTH, TOP_BAR_HEIGHT, COLOR_DARKGRAY);
+    delay(10);  // Delay after background fill
 
-    // Vehicle name (left) - use drawString instead of print
+    // Vehicle name (left)
     tft.setTextColor(COLOR_WHITE, COLOR_DARKGRAY);
     tft.setTextSize(2);
-    tft.setTextDatum(TL_DATUM);  // Top-left alignment
-    tft.setTextPadding(150);  // Clear old text automatically
-    tft.drawString(vehicle_name, 5, 10);
+    tft.setCursor(5, 10);
+    tft.print(vehicle_name);
+    delay(5);  // Delay after text
 
-    // Page name (center) - use drawString instead of print
+    // Page name (center)
     tft.setTextColor(COLOR_CYAN, COLOR_DARKGRAY);
-    tft.setTextDatum(TC_DATUM);  // Top-center alignment
-    tft.setTextPadding(200);  // Clear old text automatically
-    tft.drawString(page_name, SCREEN_WIDTH / 2, 10);
+    int page_name_width = strlen(page_name) * 12;
+    tft.setCursor((SCREEN_WIDTH - page_name_width) / 2, 10);
+    tft.print(page_name);
+    delay(5);  // Delay after text
 
     // Status indicator (right)
     int status_x = SCREEN_WIDTH - 80;
     tft.fillCircle(status_x, 17, 8, status_color);
+    delay(5);  // Delay after circle
 
-    // DTC count - use drawString instead of printf
+    // DTC count
     if (dtc_count > 0) {
         char dtc_text[16];
         snprintf(dtc_text, sizeof(dtc_text), "%d DTC", dtc_count);
         tft.setTextColor(COLOR_WHITE, COLOR_DARKGRAY);
         tft.setTextSize(1);
-        tft.setTextDatum(TL_DATUM);
-        tft.setTextPadding(50);
-        tft.drawString(dtc_text, status_x + 15, 12);
+        tft.setCursor(status_x + 15, 12);
+        tft.print(dtc_text);
+        delay(5);  // Delay after text
     }
-
-    // Reset text settings to prevent corruption
-    tft.setTextPadding(0);  // Disable padding
-    tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-    tft.setTextSize(1);
 }
 
 // ============================================================================
@@ -76,15 +74,15 @@ inline void drawBottomNav(Page active_page) {
         // Button background
         uint16_t bg_color = is_active ? COLOR_BLUE : COLOR_DARKGRAY;
         tft.fillRect(x, y, NAV_BUTTON_WIDTH, BOTTOM_NAV_HEIGHT, bg_color);
+        delay(5);  // Delay after fill
 
         // Button border
         tft.drawRect(x, y, NAV_BUTTON_WIDTH, BOTTOM_NAV_HEIGHT, COLOR_GRAY);
+        delay(5);  // Delay after border
 
-        // Button text - use drawString instead of print
+        // Button text
         tft.setTextColor(COLOR_WHITE, bg_color);
         tft.setTextSize(2);
-        tft.setTextDatum(TL_DATUM);  // Top-left alignment
-        tft.setTextPadding(NAV_BUTTON_WIDTH - 10);  // Clear old text automatically
 
         const char* label;
         int text_x;
@@ -104,13 +102,10 @@ inline void drawBottomNav(Page active_page) {
                 break;
         }
 
-        tft.drawString(label, text_x, y + 12);
+        tft.setCursor(text_x, y + 12);
+        tft.print(label);
+        delay(5);  // Delay after text
     }
-
-    // Reset text settings to prevent corruption
-    tft.setTextPadding(0);  // Disable padding
-    tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-    tft.setTextSize(1);
 }
 
 #endif // NAV_BAR_H

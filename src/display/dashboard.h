@@ -59,27 +59,34 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
             // Box border
             tft.drawRect(x, y, box_width, box_height, COLOR_GRAY);
 
-            // Label at top - use drawString instead of print
+            // Label at top - use simple print API without padding
             tft.setTextColor(label_color, COLOR_BLACK);
             tft.setTextSize(2);
-            tft.setTextDatum(TL_DATUM);
-            tft.setTextPadding(box_width - 20);
-            tft.drawString(label, x + 10, y + 8);
+            tft.setCursor(x + 10, y + 8);
+            tft.print(label);
         }
 
         // Update value only if changed
         if (first_draw || force_redraw || strcmp(value, last_value) != 0) {
-            // Draw new value (centered) - use drawString instead of print
-            int value_y = y + 35;
+            // Clear value area manually (instead of using text padding)
+            int value_y = y + 25;
+            tft.fillRect(x + 5, value_y, box_width - 10, 28, COLOR_BLACK);
+            delay(20);  // Minimal delay after fillRect (critical!)
+
+            // Draw new value (centered) - use simple print API
             tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-            tft.setTextSize(3);  // Size 3 for better fit
-            tft.setTextDatum(TC_DATUM);  // Top-center alignment
-            tft.setTextPadding(box_width - 10);  // Auto-clear old value
-            tft.drawString(value, x + (box_width / 2), value_y + 10);
+            tft.setTextSize(3);
+
+            // Calculate center position for text
+            int text_width = strlen(value) * 18;  // Approximate width for size 3
+            int text_x = x + (box_width - text_width) / 2;
+            if (text_x < x + 5) text_x = x + 5;  // Ensure minimum margin
+
+            tft.setCursor(text_x, value_y);
+            tft.print(value);
         }
 
         // Reset text settings to prevent corruption
-        tft.setTextPadding(0);
         tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
         tft.setTextSize(1);
     };
@@ -121,6 +128,8 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
     // Row 2: Battery | Intake
     drawMetricBox(0, 2, "Battery", battery_val, last_battery_val, COLOR_GREEN, false);
     drawMetricBox(1, 2, "Intake (C)", intake_val, last_intake_val, COLOR_GREEN, false);
+
+    Serial.println("[Dashboard] All boxes drawn");
 
     first_draw = false;
 }

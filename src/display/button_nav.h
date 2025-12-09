@@ -11,7 +11,8 @@
 #define BUTTON_NAV_H
 
 #include "ui_common.h"
-#include "../obd2/elm327.h"
+#include "../obd2/obd_data.h"
+#include "dtc_page.h"  // For scrollDTCUp/Down functions
 
 // ============================================================================
 // BUTTON GPIO PINS

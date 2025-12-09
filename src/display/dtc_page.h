@@ -7,7 +7,7 @@
 #define DTC_PAGE_H
 
 #include "ui_common.h"
-#include "../obd2/elm327.h"
+#include "../obd2/obd_data.h"
 
 // Scroll state
 static int dtc_scroll_offset = 0;

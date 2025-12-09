@@ -1,36 +1,38 @@
 /**
- * ELM327 OBD2 Communication Module - Implementation
+ * ELM327 OBD2 Protocol Module - Implementation
  */
 
 #include "elm327.h"
+#include "bluetooth.h"
 
 // ============================================================================
 // GLOBAL OBJECTS
 // ============================================================================
 
-BluetoothSerial SerialBT;
 ELM327 elm327;
-OBDData obd_data = {0};
-SemaphoreHandle_t data_mutex;
 
 // ============================================================================
-// INITIALIZATION
+// ELM327 CONNECTION
 // ============================================================================
 
-void initELM327() {
-    // Create mutex for shared data
-    data_mutex = xSemaphoreCreateMutex();
-    if (data_mutex == NULL) {
-        Serial.println("ERROR: Failed to create data mutex!");
-        while (1) delay(1000);
+bool connectToELM327() {
+    // Ensure Bluetooth is connected first
+    if (!connectBluetooth()) {
+        return false;
     }
 
-    // Initialize Bluetooth Serial in MASTER mode
-    if (!SerialBT.begin("OBDECK", true)) {  // true = master/client mode
-        Serial.println("ERROR: Bluetooth initialization failed!");
-        while (1) delay(1000);
+    // Initialize ELM327
+    Serial.println("\nInitializing ELM327...");
+
+    // Note: Pass false (not 1) for debug to avoid extra characters in queries
+    if (!elm327.begin(SerialBT, false, ELM327_TIMEOUT_MS)) {
+        Serial.println("ERROR: ELM327 initialization failed!");
+        Serial.printf("ELM327 Status: %d\n", elm327.nb_rx_state);
+        return false;
     }
-    Serial.println("✓ Bluetooth Serial initialized (Master mode)");
+
+    Serial.println("✓ ELM327 initialized successfully!");
+    return true;
 }
 
 // ============================================================================
@@ -164,13 +166,6 @@ float queryBatteryVoltage() {
 // DTC FUNCTIONS
 // ============================================================================
 
-/**
- * Parse DTC value to code string
- * DTC format: 2 bytes encode the code
- * First 2 bits: prefix (00=P, 01=C, 10=B, 11=U)
- * Next 2 bits: first digit
- * Last 12 bits: last 3 digits
- */
 void parseDTC(uint16_t dtc_value, char* code) {
     // Extract parts
     uint8_t prefix = (dtc_value >> 14) & 0x03;
@@ -193,9 +188,6 @@ void parseDTC(uint16_t dtc_value, char* code) {
     snprintf(code, 6, "%c%d%X%X%X", prefix_char, digit1, digit2, digit3, digit4);
 }
 
-/**
- * Get DTC description from code
- */
 const char* getDTCDescription(const char* code) {
     // Common OBD2 codes database (add more as needed)
     if (strcmp(code, "P0133") == 0) return "O2 Sensor Slow Response";
@@ -214,9 +206,6 @@ const char* getDTCDescription(const char* code) {
     return "Unknown DTC";  // Default for unknown codes
 }
 
-/**
- * Get DTC severity level
- */
 uint8_t getDTCSeverity(const char* code) {
     // Critical codes (engine damage risk)
     if (strcmp(code, "P0300") == 0) return DTC_SEVERITY_CRITICAL;  // Misfire
@@ -237,10 +226,11 @@ uint8_t getDTCSeverity(const char* code) {
     return DTC_SEVERITY_INFO;  // Default
 }
 
-/**
- * Sort DTCs by severity (critical first, then warning, then info)
- */
 void sortDTCsBySeverity() {
+    // Need to access global obd_data - include obd_data.h
+    extern OBDData obd_data;
+    extern SemaphoreHandle_t data_mutex;
+
     // Simple bubble sort by severity (critical = 2, warning = 1, info = 0)
     for (int i = 0; i < obd_data.dtc_count - 1; i++) {
         for (int j = 0; j < obd_data.dtc_count - i - 1; j++) {
@@ -254,11 +244,10 @@ void sortDTCsBySeverity() {
     }
 }
 
-/**
- * Query DTCs from vehicle
- * Mode 03: Request stored DTCs
- */
 void queryDTCs() {
+    extern OBDData obd_data;
+    extern SemaphoreHandle_t data_mutex;
+
     Serial.println("[DTC] Querying diagnostic trouble codes...");
 
     // Send Mode 03 command
@@ -343,11 +332,10 @@ void queryDTCs() {
     Serial.printf("[DTC] Total DTCs found: %d\n", obd_data.dtc_count);
 }
 
-/**
- * Clear all DTCs from ECU
- * Mode 04: Clear diagnostic information
- */
 bool clearAllDTCs() {
+    extern OBDData obd_data;
+    extern SemaphoreHandle_t data_mutex;
+
     Serial.println("[DTC] Clearing all DTCs from ECU...");
 
     // Send Mode 04 command
@@ -373,310 +361,64 @@ bool clearAllDTCs() {
 }
 
 // ============================================================================
-// CONNECTION MANAGEMENT
+// VEHICLE INFORMATION FUNCTIONS
 // ============================================================================
 
-bool connectToELM327() {
-    Serial.println("\n========================================");
-    Serial.println("Connecting to ELM327...");
-    Serial.println("========================================");
+void queryVIN() {
+    extern OBDData obd_data;
+    extern SemaphoreHandle_t data_mutex;
 
-#if BT_USE_MAC
-    // Connect using MAC address (more reliable)
-    Serial.printf("Using MAC address: %s\n", BT_MAC_ADDRESS);
+    Serial.println("[VIN] Querying Vehicle Identification Number...");
 
-    // Convert MAC string to uint8_t array
-    uint8_t mac[6];
-    if (sscanf(BT_MAC_ADDRESS, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
-               &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]) != 6) {
-        Serial.println("ERROR: Invalid MAC address format!");
-        return false;
-    }
+    // Send Mode 09, PID 02 command
+    String response = sendOBD2Command("0902");
 
-    // Connect via MAC
-    Serial.println("Attempting connection...");
-    bool connected = SerialBT.connect(mac);
+    Serial.printf("[VIN] Response: %s\n", response.c_str());
 
-    Serial.printf("SerialBT.connect() returned: %s\n", connected ? "true" : "false");
-    Serial.printf("SerialBT.connected() = %s\n", SerialBT.connected() ? "true" : "false");
+    // Parse VIN from response
+    // Response format: "49 02 01 [VIN bytes in ASCII]"
+    // VIN is 17 characters long
+    if (response.indexOf("49 02") >= 0 || response.indexOf("4902") >= 0) {
+        // Remove spaces and mode/PID prefix
+        response.replace(" ", "");
+        response.replace("4902", "");
+        response.replace("01", "");  // Remove line counter if present
 
-    if (!connected) {
-        Serial.println("ERROR: Bluetooth connection failed!");
+        // Extract VIN (next 34 hex chars = 17 ASCII chars)
+        char vin[18] = {0};
+        int vin_idx = 0;
 
-        // Check if we're actually connected despite connect() returning false
-        delay(1000);
-        if (SerialBT.connected()) {
-            Serial.println("WARNING: connect() failed but SerialBT.connected() is true!");
-            Serial.println("Proceeding with connection...");
-        } else {
-            return false;
-        }
-    }
-#else
-    // Connect using device name
-    Serial.printf("Using device name: %s\n", BT_DEVICE_NAME);
+        for (int i = 0; i < response.length() - 1 && vin_idx < 17; i += 2) {
+            char hex[3] = {response[i], response[i+1], '\0'};
+            int ascii_val = strtol(hex, NULL, 16);
 
-    bool connected = SerialBT.connect(BT_DEVICE_NAME);
-    Serial.printf("SerialBT.connect() returned: %s\n", connected ? "true" : "false");
-
-    if (!connected) {
-        Serial.println("ERROR: Bluetooth connection failed!");
-        return false;
-    }
-#endif
-
-    Serial.println("✓ Bluetooth connected successfully!");
-    Serial.printf("Connection status: %s\n", SerialBT.connected() ? "CONNECTED" : "DISCONNECTED");
-
-    // Wait for connection to stabilize
-    Serial.println("Waiting for connection to stabilize...");
-    delay(ELM327_INIT_DELAY_MS);
-
-    Serial.printf("After delay - connected: %s\n", SerialBT.connected() ? "true" : "false");
-
-    // Initialize ELM327
-    Serial.println("\nInitializing ELM327...");
-
-    // Note: Pass false (not 1) for debug to avoid extra characters in queries
-    if (!elm327.begin(SerialBT, false, ELM327_TIMEOUT_MS)) {
-        Serial.println("ERROR: ELM327 initialization failed!");
-        Serial.printf("ELM327 Status: %d\n", elm327.nb_rx_state);
-        return false;
-    }
-
-    Serial.println("✓ ELM327 initialized successfully!");
-
-    return true;
-}
-
-// ============================================================================
-// OBD2 TASK (Core 0)
-// ============================================================================
-
-void obd2Task(void *parameter) {
-    Serial.println("[OBD2 Task] Starting on Core 0...");
-
-    // Connect to ELM327
-    if (!connectToELM327()) {
-        xSemaphoreTake(data_mutex, portMAX_DELAY);
-        obd_data.connected = false;
-        snprintf(obd_data.error, sizeof(obd_data.error), "Connection failed");
-        xSemaphoreGive(data_mutex);
-
-        Serial.println("[OBD2 Task] Connection failed, task ending");
-        vTaskDelete(NULL);
-        return;
-    }
-
-    // Mark as connected
-    xSemaphoreTake(data_mutex, portMAX_DELAY);
-    obd_data.connected = true;
-    obd_data.error[0] = '\0';
-    obd_data.dtc_fetched = false;
-    xSemaphoreGive(data_mutex);
-
-    // Wait a bit for connection to stabilize before querying DTCs
-    Serial.println("[OBD2 Task] Waiting 3 seconds before querying DTCs...");
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    // Query DTCs once after connection
-    queryDTCs();
-
-    // PID query rotation
-    uint8_t pid_index = 0;
-    const uint8_t pids[] = {
-        PID_RPM,
-        PID_SPEED,
-        PID_COOLANT_TEMP,
-        PID_THROTTLE,
-        PID_INTAKE_TEMP,
-        PID_BATTERY_VOLTAGE
-    };
-    const uint8_t num_pids = sizeof(pids) / sizeof(pids[0]);
-
-    Serial.println("[OBD2 Task] Starting query loop...\n");
-
-    // Track consecutive failures to detect disconnection
-    int consecutive_failures = 0;
-    const int MAX_FAILURES_BEFORE_DISCONNECT = 3;
-
-    while (true) {
-        uint8_t current_pid = pids[pid_index];
-        float value = 0;
-        bool success = false;
-
-        // Query PID using manual functions (bypass ELMduino bug)
-        switch (current_pid) {
-            case PID_RPM:
-                {
-                    int rpm = queryRPM();
-                    if (rpm >= 0) {
-                        xSemaphoreTake(data_mutex, portMAX_DELAY);
-                        obd_data.rpm = rpm;
-                        xSemaphoreGive(data_mutex);
-                        Serial.printf("RPM: %d\n", rpm);
-                        success = true;
-                    }
-                }
-                break;
-
-            case PID_SPEED:
-                {
-                    int spd = querySpeed();
-                    if (spd >= 0) {
-                        xSemaphoreTake(data_mutex, portMAX_DELAY);
-                        obd_data.speed = spd;
-                        xSemaphoreGive(data_mutex);
-                        Serial.printf("Speed: %d km/h\n", spd);
-                        success = true;
-                    }
-                }
-                break;
-
-            case PID_COOLANT_TEMP:
-                {
-                    float temp = queryCoolantTemp();
-                    if (temp > -100) {
-                        xSemaphoreTake(data_mutex, portMAX_DELAY);
-                        obd_data.coolant_temp = temp;
-                        xSemaphoreGive(data_mutex);
-                        Serial.printf("Coolant: %.1f°C\n", temp);
-                        success = true;
-                    }
-                }
-                break;
-
-            case PID_THROTTLE:
-                {
-                    float thr = queryThrottle();
-                    if (thr >= 0) {
-                        xSemaphoreTake(data_mutex, portMAX_DELAY);
-                        obd_data.throttle = thr;
-                        xSemaphoreGive(data_mutex);
-                        Serial.printf("Throttle: %.1f%%\n", thr);
-                        success = true;
-                    }
-                }
-                break;
-
-            case PID_INTAKE_TEMP:
-                {
-                    float temp = queryIntakeTemp();
-                    if (temp > -100) {
-                        xSemaphoreTake(data_mutex, portMAX_DELAY);
-                        obd_data.intake_temp = temp;
-                        xSemaphoreGive(data_mutex);
-                        Serial.printf("Intake: %.1f°C\n", temp);
-                        success = true;
-                    }
-                }
-                break;
-
-            case PID_BATTERY_VOLTAGE:
-                {
-                    float volt = queryBatteryVoltage();
-                    if (volt > 0) {
-                        xSemaphoreTake(data_mutex, portMAX_DELAY);
-                        obd_data.battery_voltage = volt;
-                        xSemaphoreGive(data_mutex);
-                        Serial.printf("Battery: %.1fV\n", volt);
-                        success = true;
-                    }
-                }
-                break;
-        }
-
-        // Check for errors and track consecutive failures
-        if (!success) {
-            Serial.printf("PID 0x%02X query failed\n", current_pid);
-            consecutive_failures++;
-
-            // If too many consecutive failures, assume disconnected
-            if (consecutive_failures >= MAX_FAILURES_BEFORE_DISCONNECT) {
-                Serial.printf("[OBD2 Task] %d consecutive failures - connection lost!\n", consecutive_failures);
-
-                // Mark as disconnected
-                xSemaphoreTake(data_mutex, portMAX_DELAY);
-                obd_data.connected = false;
-                snprintf(obd_data.error, sizeof(obd_data.error), "Connection lost (timeout)");
-                xSemaphoreGive(data_mutex);
-
-                // Close existing connection
-                SerialBT.end();
-                delay(1000);
-
-                // Reinitialize Bluetooth
-                SerialBT.begin("OBDECK", true);
-                delay(1000);
-
-                // Wait before attempting reconnect
-                Serial.println("[OBD2 Task] Waiting 5 seconds before reconnect...");
-                vTaskDelay(pdMS_TO_TICKS(5000));
-
-                // Attempt to reconnect
-                Serial.println("[OBD2 Task] Attempting to reconnect...");
-                if (connectToELM327()) {
-                    Serial.println("[OBD2 Task] Reconnected successfully!");
-                    xSemaphoreTake(data_mutex, portMAX_DELAY);
-                    obd_data.connected = true;
-                    obd_data.error[0] = '\0';
-                    xSemaphoreGive(data_mutex);
-                    consecutive_failures = 0;  // Reset failure counter
-                } else {
-                    Serial.println("[OBD2 Task] Reconnection failed, will retry...");
-                    consecutive_failures = 0;  // Reset to try again
-                    vTaskDelay(pdMS_TO_TICKS(2000));
-                    continue;  // Skip to next iteration
-                }
-            }
-        } else {
-            // Success - reset failure counter
-            consecutive_failures = 0;
-        }
-
-        // Move to next PID
-        pid_index = (pid_index + 1) % num_pids;
-
-        // Check for DTC operation requests (from UI thread)
-        bool dtc_refresh_req = false;
-        bool dtc_clear_req = false;
-
-        xSemaphoreTake(data_mutex, portMAX_DELAY);
-        dtc_refresh_req = obd_data.dtc_refresh_requested;
-        dtc_clear_req = obd_data.dtc_clear_requested;
-        xSemaphoreGive(data_mutex);
-
-        // Handle DTC Clear request
-        if (dtc_clear_req) {
-            Serial.println("[OBD2 Task] Processing DTC clear request...");
-            bool clear_success = clearAllDTCs();
-
-            xSemaphoreTake(data_mutex, portMAX_DELAY);
-            obd_data.dtc_clear_requested = false;  // Clear flag
-            xSemaphoreGive(data_mutex);
-
-            if (clear_success) {
-                Serial.println("[OBD2 Task] DTCs cleared successfully");
-                // Query DTCs to update display
-                queryDTCs();
-            } else {
-                Serial.println("[OBD2 Task] Failed to clear DTCs");
+            // Only accept printable ASCII characters (0x20-0x7E)
+            if (ascii_val >= 0x20 && ascii_val <= 0x7E) {
+                vin[vin_idx++] = (char)ascii_val;
             }
         }
+        vin[vin_idx] = '\0';
 
-        // Handle DTC Refresh request
-        if (dtc_refresh_req) {
-            Serial.println("[OBD2 Task] Processing DTC refresh request...");
-            queryDTCs();
+        if (vin_idx == 17) {
+            Serial.printf("[VIN] Successfully retrieved: %s\n", vin);
 
             xSemaphoreTake(data_mutex, portMAX_DELAY);
-            obd_data.dtc_refresh_requested = false;  // Clear flag
+            strncpy(obd_data.vin, vin, sizeof(obd_data.vin) - 1);
+            obd_data.vin[17] = '\0';
+            obd_data.vin_fetched = true;
             xSemaphoreGive(data_mutex);
-
-            Serial.println("[OBD2 Task] DTC refresh complete");
+        } else {
+            Serial.printf("[VIN] Invalid VIN length: %d (expected 17)\n", vin_idx);
+            xSemaphoreTake(data_mutex, portMAX_DELAY);
+            strcpy(obd_data.vin, "Not Available");
+            obd_data.vin_fetched = false;
+            xSemaphoreGive(data_mutex);
         }
-
-        // Wait before next query
-        vTaskDelay(pdMS_TO_TICKS(OBD2_QUERY_INTERVAL_MS));
+    } else {
+        Serial.println("[VIN] VIN not supported or invalid response");
+        xSemaphoreTake(data_mutex, portMAX_DELAY);
+        strcpy(obd_data.vin, "Not Supported");
+        obd_data.vin_fetched = false;
+        xSemaphoreGive(data_mutex);
     }
 }

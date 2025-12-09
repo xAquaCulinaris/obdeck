@@ -37,10 +37,10 @@
 // Smooth fonts
 #define SMOOTH_FONT
 
-// SPI Frequency (reduced for ILI9488 stability - prevents white screen corruption)
-#define SPI_FREQUENCY       20000000  // 20 MHz (reduced from 27MHz for ILI9488 stability)
-#define SPI_READ_FREQUENCY  10000000  // 10 MHz
-#define SPI_TOUCH_FREQUENCY  2500000  // 2.5 MHz
+// SPI Frequency (ULTRA LOW for maximum stability)
+#define SPI_FREQUENCY        250000  // 250 kHz (was 1 MHz)
+#define SPI_READ_FREQUENCY   250000  // 250 kHz
+#define SPI_TOUCH_FREQUENCY  250000  // 250 kHz
 
 // Color depth (16-bit RGB565)
 #define TFT_RGB_ORDER TFT_BGR  // ILI9488 uses BGR ordering
