@@ -27,9 +27,9 @@
 // - This prevents power spikes when updating screen
 
 // Physical Buttons (3-button navigation system)
-#define BTN_LEFT      16  // Navigate to previous UI button (D16)
-#define BTN_RIGHT     17  // Navigate to next UI button (D17)
-#define BTN_SELECT    22  // Activate highlighted UI button (D22)
+#define BTN_LEFT      14  // Navigate to previous UI button (GPIO14)
+#define BTN_RIGHT     33  // Navigate to next UI button (GPIO33)
+#define BTN_SELECT    26  // Activate highlighted UI button (GPIO26)
 
 // SPI Configuration
 #define SPI_FREQUENCY       40000000  // 40 MHz for display

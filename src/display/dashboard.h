@@ -69,7 +69,7 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
         // Update value only if changed
         if (first_draw || force_redraw || strcmp(value, last_value) != 0) {
             // Clear value area manually (instead of using text padding)
-            int value_y = y + 25;
+            int value_y = y + 30;
             tft.fillRect(x + 5, value_y, box_width - 10, 28, COLOR_BLACK);
             delay(20);  // Minimal delay after fillRect (critical!)
 
