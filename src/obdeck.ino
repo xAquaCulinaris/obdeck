@@ -42,72 +42,86 @@ bool page_needs_redraw = true;
 // ============================================================================
 
 void setup() {
-    // Initialize Serial
-    Serial.begin(115200);
-    delay(1000);
+      // Initialize Serial
+      Serial.begin(115200);
+      delay(1000);
 
-    Serial.println("\n\n");
-    Serial.println("========================================");
-    Serial.println("OBDeck - ESP32 OBD2 Display System");
-    Serial.println("========================================");
-    Serial.printf("Hardware: %s %d\n", VEHICLE_NAME, VEHICLE_YEAR);
-    Serial.printf("Display: ILI9488 %dx%d\n", SCREEN_WIDTH, SCREEN_HEIGHT);
-    Serial.println("OBD2: ELM327 Bluetooth");
-    Serial.println("========================================\n");
+      Serial.println("\n\n");
+      Serial.println("========================================");
+      Serial.println("OBDeck - ESP32 OBD2 Display System");
+      Serial.println("========================================");
+      Serial.printf("Hardware: %s %d\n", VEHICLE_NAME, VEHICLE_YEAR);
+      Serial.printf("Display: ILI9488 %dx%d\n", SCREEN_WIDTH, SCREEN_HEIGHT);
+      Serial.println("OBD2: ELM327 Bluetooth");
+      Serial.println("========================================\n");
 
-    // Initialize OBD2 module (creates mutex and initializes Bluetooth)
-    initOBD2();
+      // Initialize OBD2 module (creates mutex and initializes Bluetooth)
+      initOBD2();
 
-    // Initialize display
-    initDisplay();
+      // Initialize display
+      initDisplay();
+      delay(100);  // Let display fully stabilize after initial clear
 
-    // Initialize physical button navigation
-    initButtonNav();
+      // Initialize physical button navigation
+      initButtonNav();
 
-    // Show startup message with animated dots - use drawString instead of print
-    tft.setTextColor(COLOR_CYAN, COLOR_BLACK);
-    tft.setTextSize(3);
-    tft.setTextDatum(TL_DATUM);
-    tft.setTextPadding(200);
-    tft.drawString("OBDeck", 80, 100);
+      // Show startup message with animated dots - use drawString instead of print
+      tft.setTextColor(COLOR_CYAN, COLOR_BLACK);
+      delay(10);
+      tft.setTextSize(3);
+      delay(10);
+      tft.setTextDatum(TL_DATUM);
+      delay(10);
+      tft.setTextPadding(200);
+      delay(10);
+      delay(50);  // Extra wait before first draw operation
+      tft.drawString("OBDeck", 80, 100);
+      delay(150);  // Longer delay after drawString with padding (does fillRect internally)
 
-    // Animate "Connecting" with dots (8 cycles = ~2 seconds)
-    for (int i = 0; i < 8; i++) {
-        // Build connecting text with dots
-        char connecting_text[20] = "Connecting";
-        int dots = i % 4;
-        for (int j = 0; j < dots; j++) {
-            connecting_text[10 + j] = '.';
-        }
-        connecting_text[10 + dots] = '\0';
+      // Animate "Starting" with dots (8 cycles = ~2 seconds)
+      // Set text properties once, outside the loop
+      tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
+      delay(10);
+      tft.setTextSize(2);
+      delay(10);
+      tft.setTextDatum(TL_DATUM);
+      delay(10);
+      tft.setTextPadding(250);
+      delay(10);
 
-        // Draw text with drawString instead of print
-        tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-        tft.setTextSize(2);
-        tft.setTextDatum(TL_DATUM);
-        tft.setTextPadding(250);
-        tft.drawString(connecting_text, 100, 140);
+      for (int i = 0; i < 8; i++) {
+          // Build connecting text with dots
+          char starting_text[20] = "Starting";
+          int dots = i % 4;
+          for (int j = 0; j < dots; j++) {
+              starting_text[10 + j] = '.';
+          }
+          starting_text[10 + dots] = '\0';
 
-        delay(250);  // 250ms per frame = 4 fps
-    }
+          // Draw text with drawString instead of print
+          delay(100);  // Wait before each draw operation
+          tft.drawString(starting_text, 100, 140);
+          delay(200);  // Wait after draw (250px padding does fillRect internally)
+      }
 
-    // Reset text settings
-    tft.setTextPadding(0);
+      // Reset text settings
+      tft.setTextPadding(0);
+      delay(10);
 
-    // Start OBD2 task on Core 0
-    xTaskCreatePinnedToCore(
-        obd2Task,                // Task function
-        "OBD2Task",              // Task name
-        OBD2_TASK_STACK_SIZE,    // Stack size
-        NULL,                    // Parameters
-        OBD2_TASK_PRIORITY,      // Priority
-        NULL,                    // Task handle
-        OBD2_TASK_CORE           // Core (0)
-    );
+      // Start OBD2 task on Core 0
+      xTaskCreatePinnedToCore(
+          obd2Task,                // Task function
+          "OBD2Task",              // Task name
+          OBD2_TASK_STACK_SIZE,    // Stack size
+          NULL,                    // Parameters
+          OBD2_TASK_PRIORITY,      // Priority
+          NULL,                    // Task handle
+          OBD2_TASK_CORE           // Core (0)
+      );
 
-    Serial.println("✓ OBD2 task started on Core 0");
-    Serial.println("\nSetup complete! Entering main loop...\n");
-}
+      Serial.println("✓ OBD2 task started on Core 0");
+      Serial.println("\nSetup complete! Entering main loop...\n");
+  }
 
 void loop() {
     // Display task runs on Core 1 (main loop)

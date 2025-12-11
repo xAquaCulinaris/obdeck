@@ -58,12 +58,17 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
         if (first_draw || force_redraw) {
             // Box border
             tft.drawRect(x, y, box_width, box_height, COLOR_GRAY);
+            delay(20);  // Delay after drawRect
 
             // Label at top - use simple print API without padding
             tft.setTextColor(label_color, COLOR_BLACK);
+            delay(10);
             tft.setTextSize(2);
+            delay(10);
             tft.setCursor(x + 10, y + 8);
+            delay(10);
             tft.print(label);
+            delay(30);  // Delay after text print
         }
 
         // Update value only if changed
@@ -71,11 +76,13 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
             // Clear value area manually (instead of using text padding)
             int value_y = y + 30;
             tft.fillRect(x + 5, value_y, box_width - 10, 28, COLOR_BLACK);
-            delay(20);  // Minimal delay after fillRect (critical!)
+            delay(50);  // Increased delay after fillRect (critical!)
 
             // Draw new value (centered) - use simple print API
             tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
+            delay(10);
             tft.setTextSize(3);
+            delay(10);
 
             // Calculate center position for text
             int text_width = strlen(value) * 18;  // Approximate width for size 3
@@ -83,12 +90,16 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
             if (text_x < x + 5) text_x = x + 5;  // Ensure minimum margin
 
             tft.setCursor(text_x, value_y);
+            delay(10);
             tft.print(value);
+            delay(30);  // Delay after text print
         }
 
         // Reset text settings to prevent corruption
         tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
+        delay(10);
         tft.setTextSize(1);
+        delay(10);
     };
 
     // Format values
@@ -119,14 +130,19 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
     // Draw all metrics in grid layout
     // Row 0: RPM | Speed
     drawMetricBox(0, 0, "RPM", rpm_val, last_rpm_val, COLOR_CYAN, false);
+    delay(30);  // Delay between boxes
     drawMetricBox(1, 0, "Speed (km/h)", speed_val, last_speed_val, COLOR_CYAN, false);
+    delay(30);  // Delay between boxes
 
     // Row 1: Coolant | Throttle
     drawMetricBox(0, 1, "Coolant (C)", coolant_val, last_coolant_val, COLOR_GREEN, false);
+    delay(30);  // Delay between boxes
     drawMetricBox(1, 1, "Throttle", throttle_val, last_throttle_val, COLOR_YELLOW, false);
+    delay(30);  // Delay between boxes
 
     // Row 2: Battery | Intake
     drawMetricBox(0, 2, "Battery", battery_val, last_battery_val, COLOR_GREEN, false);
+    delay(30);  // Delay between boxes
     drawMetricBox(1, 2, "Intake (C)", intake_val, last_intake_val, COLOR_GREEN, false);
 
     Serial.println("[Dashboard] All boxes drawn");

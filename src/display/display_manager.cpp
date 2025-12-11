@@ -22,7 +22,7 @@ void safeFillScreen(uint16_t color) {
     const int strip_height = 10;  // Draw in 10px strips
     for (int y = 0; y < SCREEN_HEIGHT; y += strip_height) {
         tft.fillRect(0, y, SCREEN_WIDTH, strip_height, color);
-        delay(10);  // Minimal safe delay
+        delay(50);  // Increased delay between strips
     }
 }
 
@@ -116,16 +116,19 @@ void drawCurrentPage(Page current_page, bool& page_needs_redraw) {
         Serial.println("[Display] Clearing screen...");
         safeFillScreen(COLOR_BLACK);
         Serial.println("[Display] Screen cleared");
+        delay(100);  // Longer delay after full screen clear
 
         // Draw top bar
         Serial.println("[Display] Drawing top bar...");
         drawTopBar("OBDeck", page_name, status_color, data_copy.dtc_count);
         Serial.println("[Display] Top bar drawn");
+        delay(100);  // Longer delay between major UI sections
 
         // Draw bottom navigation
         Serial.println("[Display] Drawing bottom nav...");
         drawBottomNav(current_page);
         Serial.println("[Display] Bottom nav drawn");
+        delay(100);  // Longer delay before drawing page content
 
         // Reset DTC scroll when switching to DTC page
         if (current_page == PAGE_DTC) {
@@ -152,7 +155,6 @@ void drawCurrentPage(Page current_page, bool& page_needs_redraw) {
 
     if (!data_copy.connected) {
         // Show connection error
-        Serial.println("[Display] >>> DISCONNECTED - Drawing error screen...");
         int center_y = CONTENT_Y_START + (CONTENT_HEIGHT / 2) - 60;
 
         // Draw static parts only once
@@ -163,30 +165,43 @@ void drawCurrentPage(Page current_page, bool& page_needs_redraw) {
             const int strip_height = 10;
             for (int y_offset = 0; y_offset < 120; y_offset += strip_height) {
                 tft.fillRect(50, center_y + y_offset, SCREEN_WIDTH - 100, strip_height, COLOR_DARKGRAY);
-                delay(10);  // Minimal safe delay
+                delay(15);  // Increased delay between strips
             }
+            delay(50);  // Extra delay after completing background
 
             // Draw borders
             tft.drawRect(50, center_y, SCREEN_WIDTH - 100, 120, COLOR_RED);
+            delay(20);  // Delay after drawRect
             tft.drawRect(51, center_y + 1, SCREEN_WIDTH - 102, 118, COLOR_RED);
+            delay(20);  // Delay after drawRect
 
             // "Connection Lost" text
             tft.setTextColor(COLOR_RED, COLOR_DARKGRAY);
+            delay(10);
             tft.setTextSize(3);
+            delay(10);
             tft.setCursor(80, center_y + 20);
+            delay(10);
             tft.print("Connection Lost");
+            delay(50);  // Delay after text print
 
             // Error message
             if (data_copy.error[0] != '\0') {
                 tft.setTextColor(COLOR_WHITE, COLOR_DARKGRAY);
+                delay(10);
                 tft.setTextSize(1);
+                delay(10);
                 tft.setCursor(70, center_y + 55);
+                delay(10);
                 tft.print(data_copy.error);
+                delay(50);  // Delay after text print
             }
 
             // Reset text settings to prevent corruption
             tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
+            delay(10);
             tft.setTextSize(1);
+            delay(10);
 
             Serial.println("[Display] >>> Error screen drawn successfully!");
             disconnection_screen_drawn = true;
@@ -204,15 +219,23 @@ void drawCurrentPage(Page current_page, bool& page_needs_redraw) {
 
         // Draw animated dots - use drawString instead of print
         tft.setTextColor(COLOR_YELLOW, COLOR_DARKGRAY);
+        delay(10);
         tft.setTextSize(2);
+        delay(10);
         tft.setTextDatum(TL_DATUM);
+        delay(10);
         tft.setTextPadding(100);  // Clear old dots automatically
+        delay(10);
         tft.drawString(dots, 235, center_y + 80);
+        delay(50);  // Delay after drawString (uses fillRect internally with padding)
 
         // Reset text settings after animation
         tft.setTextPadding(0);
+        delay(10);
         tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
+        delay(10);
         tft.setTextSize(1);
+        delay(10);
     } else {
         // Reset disconnection screen flag when connected
         disconnection_screen_drawn = false;

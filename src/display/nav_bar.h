@@ -20,38 +20,50 @@
  */
 inline void drawTopBar(const char* vehicle_name, const char* page_name,
                        uint16_t status_color, int dtc_count) {
-    // Background
-    tft.fillRect(0, 0, SCREEN_WIDTH, TOP_BAR_HEIGHT, COLOR_DARKGRAY);
-    delay(10);  // Delay after background fill
+    // Background - USE STRIPS for large area (480×40 = 19,200 pixels > 10k limit)
+    const int strip_height = 10;
+    for (int y = 0; y < TOP_BAR_HEIGHT; y += strip_height) {
+        tft.fillRect(0, y, SCREEN_WIDTH, strip_height, COLOR_DARKGRAY);
+        delay(15);  // CRITICAL: delay between strips
+    }
+    delay(50);  // Extra delay after completing top bar background
 
     // Vehicle name (left)
     tft.setTextColor(COLOR_WHITE, COLOR_DARKGRAY);
+    delay(10);
     tft.setTextSize(2);
+    delay(10);
     tft.setCursor(5, 10);
+    delay(10);
     tft.print(vehicle_name);
-    delay(5);  // Delay after text
+    delay(50);  // Delay after text print
 
     // Page name (center)
     tft.setTextColor(COLOR_CYAN, COLOR_DARKGRAY);
+    delay(10);
     int page_name_width = strlen(page_name) * 12;
     tft.setCursor((SCREEN_WIDTH - page_name_width) / 2, 10);
+    delay(10);
     tft.print(page_name);
-    delay(5);  // Delay after text
+    delay(50);  // Delay after text print
 
     // Status indicator (right)
     int status_x = SCREEN_WIDTH - 80;
     tft.fillCircle(status_x, 17, 8, status_color);
-    delay(5);  // Delay after circle
+    delay(50);  // Delay after fillCircle
 
     // DTC count
     if (dtc_count > 0) {
         char dtc_text[16];
         snprintf(dtc_text, sizeof(dtc_text), "%d DTC", dtc_count);
         tft.setTextColor(COLOR_WHITE, COLOR_DARKGRAY);
+        delay(10);
         tft.setTextSize(1);
+        delay(10);
         tft.setCursor(status_x + 15, 12);
+        delay(10);
         tft.print(dtc_text);
-        delay(5);  // Delay after text
+        delay(50);  // Delay after text print
     }
 }
 
@@ -71,18 +83,20 @@ inline void drawBottomNav(Page active_page) {
         int x = i * NAV_BUTTON_WIDTH;
         bool is_active = (i == active_page);
 
-        // Button background
+        // Button background (each button is 160×40 = 6,400 pixels)
         uint16_t bg_color = is_active ? COLOR_BLUE : COLOR_DARKGRAY;
         tft.fillRect(x, y, NAV_BUTTON_WIDTH, BOTTOM_NAV_HEIGHT, bg_color);
-        delay(5);  // Delay after fill
+        delay(50);  // CRITICAL: Increased delay after each button fillRect
 
         // Button border
         tft.drawRect(x, y, NAV_BUTTON_WIDTH, BOTTOM_NAV_HEIGHT, COLOR_GRAY);
-        delay(5);  // Delay after border
+        delay(20);  // Delay after drawRect
 
         // Button text
         tft.setTextColor(COLOR_WHITE, bg_color);
+        delay(10);
         tft.setTextSize(2);
+        delay(10);
 
         const char* label;
         int text_x;
@@ -103,8 +117,9 @@ inline void drawBottomNav(Page active_page) {
         }
 
         tft.setCursor(text_x, y + 12);
+        delay(10);
         tft.print(label);
-        delay(5);  // Delay after text
+        delay(50);  // Delay after text print
     }
 }
 
