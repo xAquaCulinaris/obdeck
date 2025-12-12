@@ -64,7 +64,6 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
             tft.setTextSize(2);
             tft.setCursor(x + 10, y + 8);
             tft.print(label);
-            delay(10);  // Delay after text print
         }
 
         // Update value only if changed
@@ -72,7 +71,7 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
             // Clear value area manually (instead of using text padding)
             int value_y = y + 30;
             tft.fillRect(x + 5, value_y, box_width - 10, 28, COLOR_BLACK);
-            delay(10);  // Increased delay after fillRect (critical!)
+            delay(20);  // Required delay after fillRect
 
             // Draw new value (centered) - use simple print API
             tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
@@ -85,14 +84,11 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
 
             tft.setCursor(text_x, value_y);
             tft.print(value);
-            delay(10);  // Delay after text print
         }
 
         // Reset text settings to prevent corruption
         tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-        delay(10);
         tft.setTextSize(1);
-        delay(10);
     };
 
     // Format values
@@ -123,19 +119,14 @@ inline void drawDashboardPage(uint16_t rpm, uint16_t last_rpm,
     // Draw all metrics in grid layout (all labels in cyan for consistency)
     // Row 0: RPM | Speed
     drawMetricBox(0, 0, "RPM", rpm_val, last_rpm_val, COLOR_CYAN, false);
-    delay(30);  // Delay between boxes
     drawMetricBox(1, 0, "Speed (km/h)", speed_val, last_speed_val, COLOR_CYAN, false);
-    delay(30);  // Delay between boxes
 
     // Row 1: Coolant | Throttle
     drawMetricBox(0, 1, "Coolant (C)", coolant_val, last_coolant_val, COLOR_CYAN, false);
-    delay(30);  // Delay between boxes
     drawMetricBox(1, 1, "Throttle", throttle_val, last_throttle_val, COLOR_CYAN, false);
-    delay(30);  // Delay between boxes
 
     // Row 2: Battery | Intake
     drawMetricBox(0, 2, "Battery", battery_val, last_battery_val, COLOR_CYAN, false);
-    delay(30);  // Delay between boxes
     drawMetricBox(1, 2, "Intake (C)", intake_val, last_intake_val, COLOR_CYAN, false);
 
     Serial.println("[Dashboard] All boxes drawn");

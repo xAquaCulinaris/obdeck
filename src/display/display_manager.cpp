@@ -22,7 +22,7 @@ void safeFillScreen(uint16_t color) {
     const int strip_height = 10;  // Draw in 10px strips
     for (int y = 0; y < SCREEN_HEIGHT; y += strip_height) {
         tft.fillRect(0, y, SCREEN_WIDTH, strip_height, color);
-        delay(25);  // Increased delay between strips
+        delay(5);  // Required delay after fillRect
     }
 }
 
@@ -31,17 +31,15 @@ void initDisplay() {
     Serial.printf("TFT object address: %p\n", &tft);
 
     tft.init();
-    delay(100);  // Give display time to initialize
+    delay(50);  // Brief time for hardware initialization
     Serial.println("✓ tft.init() completed");
 
     Serial.println("Setting rotation...");
     tft.setRotation(SCREEN_ROTATION);
-    delay(50);
     Serial.printf("✓ Rotation set to %d\n", SCREEN_ROTATION);
 
     Serial.println("Clearing screen to BLACK...");
-    safeFillScreen(COLOR_BLACK);  // Use safe fill
-    delay(50);
+    safeFillScreen(COLOR_BLACK);  // Use safe fill (already has delays)
     Serial.printf("✓ Screen cleared (COLOR_BLACK = 0x%04X)\n", COLOR_BLACK);
 
     Serial.println("✓ Display initialized");
@@ -148,25 +146,22 @@ void drawCurrentPage(Page current_page, bool& page_needs_redraw) {
                 }
             }
         }
-        delay(50);
 
         // Clear screen first (use safe fill to avoid power spike)
         Serial.println("[Display] Clearing screen...");
         safeFillScreen(COLOR_BLACK);
         Serial.println("[Display] Screen cleared");
-        delay(100);  // Longer delay after full screen clear
 
         // Draw top bar
         Serial.println("[Display] Drawing top bar...");
         drawTopBar("OBDeck", page_name, status_color, data_copy.dtc_count);
         Serial.println("[Display] Top bar drawn");
-        delay(100);  // Longer delay between major UI sections
 
         // Draw bottom navigation
         Serial.println("[Display] Drawing bottom nav...");
         drawBottomNav(current_page);
         Serial.println("[Display] Bottom nav drawn");
-        delay(100);  // Longer delay before drawing page content
+
 
         // Reset DTC scroll when switching to DTC page
         if (current_page == PAGE_DTC) {
@@ -199,13 +194,11 @@ void drawCurrentPage(Page current_page, bool& page_needs_redraw) {
         for (int y = CONTENT_Y_START; y < SCREEN_HEIGHT - BOTTOM_NAV_HEIGHT; y += strip_height) {
             int height = min(strip_height, SCREEN_HEIGHT - BOTTOM_NAV_HEIGHT - y);
             tft.fillRect(0, y, SCREEN_WIDTH, height, COLOR_BLACK);
-            delay(10);
+            delay(10);  // Required after fillRect
         }
-        delay(50);
 
         // Update top bar only (status color may have changed)
         drawTopBar("OBDeck", page_name, status_color, data_copy.dtc_count);
-        delay(50);
 
         // Mark for connected
         last_connected = data_copy.connected;
@@ -216,7 +209,6 @@ void drawCurrentPage(Page current_page, bool& page_needs_redraw) {
     else if (data_copy.dtc_count != last_dtc_count || connection_state_changed) {
         drawTopBar("OBDeck", page_name, status_color, data_copy.dtc_count);
         last_dtc_count = data_copy.dtc_count;
-        delay(50);
     }
 
     // Track that we've been connected
@@ -236,43 +228,30 @@ void drawCurrentPage(Page current_page, bool& page_needs_redraw) {
             const int strip_height = 10;
             for (int y_offset = 0; y_offset < 120; y_offset += strip_height) {
                 tft.fillRect(50, center_y + y_offset, SCREEN_WIDTH - 100, strip_height, COLOR_DARKGRAY);
-                delay(15);  // Increased delay between strips
+                delay(10);  // Required delay after fillRect
             }
-            delay(50);  // Extra delay after completing background
 
             // Draw borders
             tft.drawRect(50, center_y, SCREEN_WIDTH - 100, 120, COLOR_WHITE);
-            delay(20);  // Delay after drawRect
             tft.drawRect(51, center_y + 1, SCREEN_WIDTH - 102, 118, COLOR_WHITE);
-            delay(20);  // Delay after drawRect
 
             // "Connecting" text
             tft.setTextColor(COLOR_WHITE, COLOR_DARKGRAY);
-            delay(10);
             tft.setTextSize(3);
-            delay(10);
             tft.setCursor(150, center_y + 30);
-            delay(10);
             tft.print("Connecting");
-            delay(50);  // Delay after text print
 
             // Error message
             if (data_copy.error[0] != '\0') {
                 tft.setTextColor(COLOR_WHITE, COLOR_DARKGRAY);
-                delay(10);
                 tft.setTextSize(1);
-                delay(10);
                 tft.setCursor(70, center_y + 55);
-                delay(10);
                 tft.print(data_copy.error);
-                delay(50);  // Delay after text print
             }
 
             // Reset text settings to prevent corruption
             tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-            delay(10);
             tft.setTextSize(1);
-            delay(10);
 
             Serial.println("[Display] >>> Error screen drawn successfully!");
             disconnection_screen_drawn = true;
@@ -290,23 +269,16 @@ void drawCurrentPage(Page current_page, bool& page_needs_redraw) {
 
         // Draw animated dots - use drawString instead of print
         tft.setTextColor(COLOR_WHITE, COLOR_DARKGRAY);
-        delay(10);
         tft.setTextSize(2);
-        delay(10);
         tft.setTextDatum(TL_DATUM);
-        delay(10);
         tft.setTextPadding(100);  // Clear old dots automatically
-        delay(10);
         tft.drawString(dots, 220, center_y + 80);
-        delay(50);  // Delay after drawString (uses fillRect internally with padding)
+        delay(20);  // Required delay after drawString with padding (uses fillRect internally)
 
         // Reset text settings after animation
         tft.setTextPadding(0);
-        delay(10);
         tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-        delay(10);
         tft.setTextSize(1);
-        delay(10);
     } else {
         // Reset disconnection screen flag when connected
         disconnection_screen_drawn = false;

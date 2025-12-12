@@ -30,7 +30,7 @@ void showStartupScreen() {
         delay(3);  // Fast clear (3ms * 32 strips = ~100ms)
     }
 
-    delay(50);  // Let display settle
+    delay(20);  // Brief settle time
 
     // ===================================================================
     // PHASE 1: Logo & Branding (0-800ms)
@@ -41,19 +41,16 @@ void showStartupScreen() {
     tft.setTextSize(4);
     tft.setTextDatum(TC_DATUM);  // Top center
     tft.drawString("OBDeck", SCREEN_WIDTH / 2, 60);
-    delay(20);
 
     // Draw subtitle
     tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
     tft.setTextSize(2);
     tft.drawString("OBD2 Dashboard", SCREEN_WIDTH / 2, 110);
-    delay(20);
 
     // Draw vehicle info
     tft.setTextColor(COLOR_GRAY, COLOR_BLACK);
     tft.setTextSize(1);
     tft.drawString("2010 Opel Corsa D", SCREEN_WIDTH / 2, 140);
-    delay(20);
 
     delay(200);  // Hold branding for visibility
 
@@ -108,7 +105,6 @@ void showStartupScreen() {
     tft.setTextSize(2);
     tft.setTextDatum(MC_DATUM);
     tft.drawString("READY", SCREEN_WIDTH / 2, (SCAN_START_Y + SCAN_END_Y) / 2);
-    delay(20);
 
     delay(350);  // Hold ready state
 
@@ -125,20 +121,18 @@ void showStartupScreenSimple() {
         tft.fillRect(0, y, SCREEN_WIDTH, 10, COLOR_BLACK);
         delay(3);
     }
-    delay(50);
+    delay(20);
 
     // Show title
     tft.setTextColor(COLOR_CYAN, COLOR_BLACK);
     tft.setTextSize(4);
     tft.setTextDatum(MC_DATUM);  // Middle center
     tft.drawString("OBDeck", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 30);
-    delay(20);
 
     // Show subtitle
     tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
     tft.setTextSize(2);
     tft.drawString("OBD2 Dashboard", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 20);
-    delay(20);
 
     delay(800);  // Hold for visibility
 }
