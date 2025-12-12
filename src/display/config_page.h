@@ -34,7 +34,7 @@ inline void drawConfigPage() {
     // VEHICLE INFO (Top Left)
     // ========================================
     int y = TOP_Y;
-    tft.setTextColor(COLOR_GREEN, COLOR_BLACK);
+    tft.setTextColor(COLOR_CYAN, COLOR_BLACK);
     tft.setTextSize(1);
     tft.setTextDatum(TL_DATUM);
     tft.drawString("Vehicle Information", LEFT_X, y);
@@ -58,7 +58,7 @@ inline void drawConfigPage() {
     // BLUETOOTH (Bottom Left)
     // ========================================
     y = BOTTOM_Y;
-    tft.setTextColor(COLOR_GREEN, COLOR_BLACK);
+    tft.setTextColor(COLOR_CYAN, COLOR_BLACK);
     tft.setTextSize(1);
     tft.drawString("Bluetooth Settings", LEFT_X, y);
 
@@ -75,7 +75,7 @@ inline void drawConfigPage() {
     // DISPLAY (Top Right)
     // ========================================
     y = TOP_Y;
-    tft.setTextColor(COLOR_GREEN, COLOR_BLACK);
+    tft.setTextColor(COLOR_CYAN, COLOR_BLACK);
     tft.setTextSize(1);
     tft.drawString("Display Settings", RIGHT_X, y);
 
@@ -88,9 +88,17 @@ inline void drawConfigPage() {
 
     y += 30;
     tft.drawString("Refresh Rate:", RIGHT_X, y);
-    char hz_str[8];
-    snprintf(hz_str, sizeof(hz_str), "%d Hz", DISPLAY_REFRESH_HZ);
+    char hz_str[16];
+    // Calculate actual refresh rate from DISPLAY_REFRESH_MS
+    float actual_hz = 1000.0f / DISPLAY_REFRESH_MS;
+    snprintf(hz_str, sizeof(hz_str), "%.1f Hz", actual_hz);
     tft.drawString(hz_str, RIGHT_X + 10, y + 12);
+
+    y += 30;
+    tft.drawString("SPI Frequency:", RIGHT_X, y);
+    char spi_str[16];
+    snprintf(spi_str, sizeof(spi_str), "%d MHz", SPI_FREQUENCY / 1000000);
+    tft.drawString(spi_str, RIGHT_X + 10, y + 12);
 
     y += 30;
     tft.drawString("Controller:", RIGHT_X, y);

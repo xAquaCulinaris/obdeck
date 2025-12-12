@@ -25,6 +25,7 @@
 // Display Manager
 #include "display/display_manager.h"
 #include "display/button_nav.h"
+#include "display/startup_screen.h"
 
 // ============================================================================
 // GLOBAL STATE
@@ -68,47 +69,8 @@ void setup() {
       // Initialize physical button navigation
       initButtonNav();
 
-      // Show startup message with animated dots - use drawString instead of print
-      tft.setTextColor(COLOR_CYAN, COLOR_BLACK);
-      delay(10);
-      tft.setTextSize(3);
-      delay(10);
-      tft.setTextDatum(TL_DATUM);
-      delay(10);
-      tft.setTextPadding(200);
-      delay(10);
-      delay(50);  // Extra wait before first draw operation
-      tft.drawString("OBDeck", 160, 100);
-      delay(150);  // Longer delay after drawString with padding (does fillRect internally)
-
-      // Animate "Starting" with dots (8 cycles = ~2 seconds)
-      // Set text properties once, outside the loop
-      tft.setTextColor(COLOR_WHITE, COLOR_BLACK);
-      delay(10);
-      tft.setTextSize(2);
-      delay(10);
-      tft.setTextDatum(TL_DATUM);
-      delay(10);
-      tft.setTextPadding(250);
-      delay(10);
-
-      for (int i = 0; i < 8; i++) {
-          // Build connecting text with dots
-          char starting_text[20] = "Starting";
-          int dots = i % 4;
-          for (int j = 0; j < dots; j++) {
-              starting_text[10 + j] = '.';
-          }
-          starting_text[10 + dots] = '\0';
-
-          // Draw text with drawString instead of print
-          tft.drawString(starting_text, 160, 140);
-          delay(200);  // Wait after draw (250px padding does fillRect internally)
-      }
-
-      // Reset text settings
-      tft.setTextPadding(0);
-      delay(10);
+      // Show animated startup screen (~3 seconds)
+      showStartupScreen();
 
       // Start OBD2 task on Core 0
       xTaskCreatePinnedToCore(

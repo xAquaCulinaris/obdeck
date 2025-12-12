@@ -189,41 +189,103 @@ void parseDTC(uint16_t dtc_value, char* code) {
 }
 
 const char* getDTCDescription(const char* code) {
-    // Common OBD2 codes database (add more as needed)
-    if (strcmp(code, "P0133") == 0) return "O2 Sensor Slow Response";
-    if (strcmp(code, "P0244") == 0) return "Wastegate Solenoid";
+    // Critical codes - Engine damage risk
     if (strcmp(code, "P0300") == 0) return "Random Misfire Detected";
-    if (strcmp(code, "P0420") == 0) return "Catalyst System Low Efficiency";
-    if (strcmp(code, "P0171") == 0) return "System Too Lean (Bank 1)";
-    if (strcmp(code, "P0172") == 0) return "System Too Rich (Bank 1)";
+    if (strcmp(code, "P0301") == 0) return "Cylinder 1 Misfire";
+    if (strcmp(code, "P0302") == 0) return "Cylinder 2 Misfire";
+    if (strcmp(code, "P0303") == 0) return "Cylinder 3 Misfire";
+    if (strcmp(code, "P0304") == 0) return "Cylinder 4 Misfire";
+    if (strcmp(code, "P0217") == 0) return "Engine Overheat Condition";
+    if (strcmp(code, "P0218") == 0) return "Transmission Overheat";
+    if (strcmp(code, "P0524") == 0) return "Engine Oil Pressure Too Low";
+    if (strcmp(code, "P0522") == 0) return "Oil Pressure Sensor Low";
+    if (strcmp(code, "P0523") == 0) return "Oil Pressure Sensor High";
+    if (strcmp(code, "P0016") == 0) return "Crankshaft/Camshaft Correlation";
+    if (strcmp(code, "P0017") == 0) return "Crankshaft/Camshaft Correlation B1";
+    if (strcmp(code, "P0335") == 0) return "Crankshaft Position Sensor";
+    if (strcmp(code, "P0340") == 0) return "Camshaft Position Sensor";
+    
+    // Warning codes - Performance/Emissions
+    if (strcmp(code, "P0420") == 0) return "Catalyst Efficiency Low B1";
+    if (strcmp(code, "P0430") == 0) return "Catalyst Efficiency Low B2";
+    if (strcmp(code, "P0171") == 0) return "System Too Lean B1";
+    if (strcmp(code, "P0172") == 0) return "System Too Rich B1";
+    if (strcmp(code, "P0174") == 0) return "System Too Lean B2";
+    if (strcmp(code, "P0175") == 0) return "System Too Rich B2";
     if (strcmp(code, "P0440") == 0) return "EVAP System Malfunction";
     if (strcmp(code, "P0442") == 0) return "EVAP System Small Leak";
     if (strcmp(code, "P0455") == 0) return "EVAP System Large Leak";
+    if (strcmp(code, "P0456") == 0) return "EVAP System Very Small Leak";
+    if (strcmp(code, "P0128") == 0) return "Coolant Thermostat Malfunction";
+    if (strcmp(code, "P0133") == 0) return "O2 Sensor Slow Response B1S1";
+    if (strcmp(code, "P0134") == 0) return "O2 Sensor No Activity B1S1";
+    if (strcmp(code, "P0135") == 0) return "O2 Sensor Heater B1S1";
+    if (strcmp(code, "P0141") == 0) return "O2 Sensor Heater B1S2";
+    if (strcmp(code, "P0401") == 0) return "EGR Insufficient Flow";
+    if (strcmp(code, "P0402") == 0) return "EGR Excessive Flow";
+    if (strcmp(code, "P0411") == 0) return "Secondary Air Injection";
+    if (strcmp(code, "P0606") == 0) return "ECM Processor Fault";
+    if (strcmp(code, "P0244") == 0) return "Wastegate Solenoid";
+    
+    // Info codes - Sensor issues
     if (strcmp(code, "P0101") == 0) return "MAF Sensor Range/Performance";
-    if (strcmp(code, "P0113") == 0) return "Intake Air Temp High Input";
-    if (strcmp(code, "P0128") == 0) return "Coolant Temp Below Thermostat";
+    if (strcmp(code, "P0102") == 0) return "MAF Sensor Circuit Low";
+    if (strcmp(code, "P0103") == 0) return "MAF Sensor Circuit High";
+    if (strcmp(code, "P0106") == 0) return "MAP Sensor Range/Performance";
+    if (strcmp(code, "P0107") == 0) return "MAP Sensor Circuit Low";
+    if (strcmp(code, "P0108") == 0) return "MAP Sensor Circuit High";
+    if (strcmp(code, "P0112") == 0) return "Intake Air Temp Sensor Low";
+    if (strcmp(code, "P0113") == 0) return "Intake Air Temp Sensor High";
+    if (strcmp(code, "P0116") == 0) return "Coolant Temp Sensor Range";
+    if (strcmp(code, "P0117") == 0) return "Coolant Temp Sensor Low";
+    if (strcmp(code, "P0118") == 0) return "Coolant Temp Sensor High";
+    if (strcmp(code, "P0122") == 0) return "Throttle Position Sensor Low";
+    if (strcmp(code, "P0123") == 0) return "Throttle Position Sensor High";
+    if (strcmp(code, "P0562") == 0) return "System Voltage Low";
+    if (strcmp(code, "P0563") == 0) return "System Voltage High";
 
-    return "Unknown DTC";  // Default for unknown codes
+    return "Unknown DTC";
 }
 
 uint8_t getDTCSeverity(const char* code) {
     // Critical codes (engine damage risk)
-    if (strcmp(code, "P0300") == 0) return DTC_SEVERITY_CRITICAL;  // Misfire
+    if (strcmp(code, "P0300") == 0) return DTC_SEVERITY_CRITICAL;  // Random misfire
     if (strcmp(code, "P0301") == 0) return DTC_SEVERITY_CRITICAL;  // Cylinder 1 misfire
     if (strcmp(code, "P0302") == 0) return DTC_SEVERITY_CRITICAL;  // Cylinder 2 misfire
     if (strcmp(code, "P0303") == 0) return DTC_SEVERITY_CRITICAL;  // Cylinder 3 misfire
     if (strcmp(code, "P0304") == 0) return DTC_SEVERITY_CRITICAL;  // Cylinder 4 misfire
-
+    if (strcmp(code, "P0217") == 0) return DTC_SEVERITY_CRITICAL;  // Engine overheating
+    if (strcmp(code, "P0218") == 0) return DTC_SEVERITY_CRITICAL;  // Transmission overheating
+    if (strcmp(code, "P0524") == 0) return DTC_SEVERITY_CRITICAL;  // Oil pressure too low
+    if (strcmp(code, "P0522") == 0) return DTC_SEVERITY_CRITICAL;  // Oil pressure sensor low
+    if (strcmp(code, "P0523") == 0) return DTC_SEVERITY_CRITICAL;  // Oil pressure sensor high
+    if (strcmp(code, "P0016") == 0) return DTC_SEVERITY_CRITICAL;  // Cam/Crank correlation
+    if (strcmp(code, "P0017") == 0) return DTC_SEVERITY_CRITICAL;  // Cam/Crank correlation Bank 1
+    if (strcmp(code, "P0335") == 0) return DTC_SEVERITY_CRITICAL;  // Crankshaft position sensor
+    if (strcmp(code, "P0340") == 0) return DTC_SEVERITY_CRITICAL;  // Camshaft position sensor
+    
     // Warning codes (performance/emissions)
-    if (strcmp(code, "P0420") == 0) return DTC_SEVERITY_WARNING;   // Catalyst
-    if (strcmp(code, "P0171") == 0) return DTC_SEVERITY_WARNING;   // Lean
-    if (strcmp(code, "P0172") == 0) return DTC_SEVERITY_WARNING;   // Rich
-    if (strcmp(code, "P0440") == 0) return DTC_SEVERITY_WARNING;   // EVAP
-    if (strcmp(code, "P0442") == 0) return DTC_SEVERITY_WARNING;   // EVAP leak
-    if (strcmp(code, "P0455") == 0) return DTC_SEVERITY_WARNING;   // EVAP leak
-
-    // Info/minor codes
-    return DTC_SEVERITY_INFO;  // Default
+    if (strcmp(code, "P0420") == 0) return DTC_SEVERITY_WARNING;   // Catalyst efficiency
+    if (strcmp(code, "P0430") == 0) return DTC_SEVERITY_WARNING;   // Catalyst efficiency Bank 2
+    if (strcmp(code, "P0171") == 0) return DTC_SEVERITY_WARNING;   // System too lean Bank 1
+    if (strcmp(code, "P0172") == 0) return DTC_SEVERITY_WARNING;   // System too rich Bank 1
+    if (strcmp(code, "P0174") == 0) return DTC_SEVERITY_WARNING;   // System too lean Bank 2
+    if (strcmp(code, "P0175") == 0) return DTC_SEVERITY_WARNING;   // System too rich Bank 2
+    if (strcmp(code, "P0440") == 0) return DTC_SEVERITY_WARNING;   // EVAP system
+    if (strcmp(code, "P0442") == 0) return DTC_SEVERITY_WARNING;   // EVAP leak small
+    if (strcmp(code, "P0455") == 0) return DTC_SEVERITY_WARNING;   // EVAP leak large
+    if (strcmp(code, "P0456") == 0) return DTC_SEVERITY_WARNING;   // EVAP leak very small
+    if (strcmp(code, "P0128") == 0) return DTC_SEVERITY_WARNING;   // Coolant thermostat
+    if (strcmp(code, "P0133") == 0) return DTC_SEVERITY_WARNING;   // O2 sensor slow response
+    if (strcmp(code, "P0134") == 0) return DTC_SEVERITY_WARNING;   // O2 sensor no activity
+    if (strcmp(code, "P0135") == 0) return DTC_SEVERITY_WARNING;   // O2 sensor heater
+    if (strcmp(code, "P0141") == 0) return DTC_SEVERITY_WARNING;   // O2 sensor heater Bank 1 Sensor 2
+    if (strcmp(code, "P0401") == 0) return DTC_SEVERITY_WARNING;   // EGR insufficient flow
+    if (strcmp(code, "P0402") == 0) return DTC_SEVERITY_WARNING;   // EGR excessive flow
+    if (strcmp(code, "P0411") == 0) return DTC_SEVERITY_WARNING;   // Secondary air injection
+    if (strcmp(code, "P0606") == 0) return DTC_SEVERITY_WARNING;   // ECM processor fault
+    
+    return DTC_SEVERITY_INFO;  // Default for unknown codes
 }
 
 void sortDTCsBySeverity() {

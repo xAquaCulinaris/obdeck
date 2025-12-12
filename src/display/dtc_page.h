@@ -53,7 +53,7 @@ inline void drawDTCPage(const DTC* dtc_data, int dtc_count) {
 
     } else {
         // Compact header with count and pagination
-        tft.setTextColor(COLOR_YELLOW, COLOR_BLACK);
+        tft.setTextColor(COLOR_CYAN, COLOR_BLACK);
         tft.setTextSize(1);
         tft.setCursor(10, y);
 

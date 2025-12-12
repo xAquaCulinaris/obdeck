@@ -54,9 +54,8 @@
 // Use 1 for normal landscape, use 3 for landscape flipped 180°
 #define SCREEN_ROTATION 3  // Landscape flipped 180° (480x320)
 
-// Display Settings
-#define DISPLAY_REFRESH_HZ  2      // 2 Hz = 2 updates per second
-#define DISPLAY_REFRESH_MS  (1000 / DISPLAY_REFRESH_HZ)
+// Display Refresh Rate
+#define DISPLAY_REFRESH_MS  500    // 500ms = 2 Hz (2 updates per second)
 
 // Color Definitions (RGB565)
 #define COLOR_BLACK     0x0000
@@ -85,7 +84,6 @@
 #define OBD2_MAX_RETRIES        3      // Retry failed queries 3 times
 
 // Supported PIDs (Mode 01)
-#define PID_SUPPORTED_PIDS      0x00   // PIDs supported [01-20]
 #define PID_COOLANT_TEMP        0x05   // Engine coolant temperature
 #define PID_RPM                 0x0C   // Engine RPM
 #define PID_SPEED               0x0D   // Vehicle speed
@@ -97,15 +95,10 @@
 // THREADING CONFIGURATION
 // ============================================================================
 
-// FreeRTOS Task Configuration
+// FreeRTOS Task Configuration (OBD2 runs on Core 0, Display runs in main loop on Core 1)
 #define OBD2_TASK_STACK_SIZE    8192   // 8KB stack for OBD2 task
-#define DISPLAY_TASK_STACK_SIZE 8192   // 8KB stack for display task
-
 #define OBD2_TASK_PRIORITY      1      // Priority 1 (lower)
-#define DISPLAY_TASK_PRIORITY   1      // Priority 1 (lower)
-
 #define OBD2_TASK_CORE          0      // Run on Core 0
-#define DISPLAY_TASK_CORE       1      // Run on Core 1 (with Arduino loop)
 
 // ============================================================================
 // VEHICLE INFORMATION
@@ -113,14 +106,5 @@
 
 #define VEHICLE_NAME    "Opel Corsa D"
 #define VEHICLE_YEAR    2010
-
-// ============================================================================
-// DEBUG CONFIGURATION
-// ============================================================================
-
-#define DEBUG_SERIAL            true   // Enable serial debug output
-#define DEBUG_BLUETOOTH         true   // Debug Bluetooth connection
-#define DEBUG_OBD2              false  // Debug OBD2 queries (causes issues with ELMduino)
-#define DEBUG_DISPLAY           false  // Debug display updates (verbose)
 
 #endif // CONFIG_H
