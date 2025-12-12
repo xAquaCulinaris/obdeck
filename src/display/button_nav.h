@@ -15,12 +15,9 @@
 #include "dtc_page.h"  // For scrollDTCUp/Down functions
 
 // ============================================================================
-// BUTTON GPIO PINS
+// BUTTON CONFIGURATION
 // ============================================================================
-
-#define BTN_LEFT_PIN    16  // Navigate to previous button (D16)
-#define BTN_RIGHT_PIN   17  // Navigate to next button (D17)
-#define BTN_SELECT_PIN  22  // Activate highlighted button (D22)
+// Pin definitions are in config.h: BTN_LEFT, BTN_RIGHT, BTN_SELECT
 
 #define DEBOUNCE_DELAY_MS 500  // Button debounce delay (increased to prevent rapid page changes)
 
@@ -65,8 +62,8 @@ static UIButton ui_buttons[] = {
     {BTN_DTC_DOWN,    260, BOTTOM_NAV_Y - 48, 140, 38, false, PAGE_DTC},  // Enabled dynamically
 };
 
-// Current highlighted button index
-static int current_button_index = 0;  // Start with Dashboard button
+// Current highlighted button index (declared here, defined in obdeck.ino)
+extern int current_button_index;
 
 // ============================================================================
 // BUTTON INITIALIZATION
@@ -76,16 +73,13 @@ static int current_button_index = 0;  // Start with Dashboard button
  * Initialize physical button GPIO pins
  */
 inline void initButtonNav() {
-    pinMode(BTN_LEFT_PIN, INPUT_PULLUP);
-    pinMode(BTN_RIGHT_PIN, INPUT_PULLUP);
-    pinMode(BTN_SELECT_PIN, INPUT_PULLUP);
-
-    // Start with Dashboard button highlighted
-    current_button_index = BTN_NAV_DASHBOARD;
+    pinMode(BTN_LEFT, INPUT_PULLUP);
+    pinMode(BTN_RIGHT, INPUT_PULLUP);
+    pinMode(BTN_SELECT, INPUT_PULLUP);
 
     Serial.println("✓ Button navigation initialized");
     Serial.printf("  LEFT=GPIO%d, RIGHT=GPIO%d, SELECT=GPIO%d\n",
-                  BTN_LEFT_PIN, BTN_RIGHT_PIN, BTN_SELECT_PIN);
+                  BTN_LEFT, BTN_RIGHT, BTN_SELECT);
     Serial.printf("  Starting with button %d highlighted\n", current_button_index);
 }
 
@@ -128,6 +122,34 @@ inline void updateButtonVisibility(Page current_page, int dtc_count, int dtc_scr
         ui_buttons[BTN_DTC_UP].enabled = false;
         ui_buttons[BTN_DTC_DOWN].enabled = false;
     }
+
+    // Safety check: if current button is not visible/enabled on current page,
+    // reset to the appropriate nav button for this page
+    if (current_button_index >= 0 && current_button_index < BTN_MAX) {
+        UIButton& current_btn = ui_buttons[current_button_index];
+
+        // Check if current button should be visible on current page
+        bool should_be_visible = current_btn.enabled &&
+                                 (current_btn.page == current_page || current_btn.page == (Page)99);
+
+        if (!should_be_visible) {
+            // Current button not visible - reset to appropriate nav button
+            switch (current_page) {
+                case PAGE_DASHBOARD:
+                    current_button_index = BTN_NAV_DASHBOARD;
+                    break;
+                case PAGE_DTC:
+                    current_button_index = BTN_NAV_DTC;
+                    break;
+                case PAGE_CONFIG:
+                    current_button_index = BTN_NAV_CONFIG;
+                    break;
+                default:
+                    current_button_index = BTN_NAV_DASHBOARD;
+                    break;
+            }
+        }
+    }
 }
 
 /**
@@ -161,8 +183,9 @@ inline int getVisibleButtons(Page current_page, int* visible_buttons) {
  * Draw highlight border around a button
  * @param button_index Index in ui_buttons array
  * @param show If true, draw highlight; if false, clear highlight
+ * @param current_page Current active page (needed to determine nav button colors)
  */
-inline void drawButtonHighlight(int button_index, bool show) {
+inline void drawButtonHighlight(int button_index, bool show, Page current_page) {
     if (button_index < 0 || button_index >= BTN_MAX) {
         return;
     }
@@ -179,42 +202,52 @@ inline void drawButtonHighlight(int button_index, bool show) {
     }
 
     if (show) {
-        // Draw yellow highlight (3 pixels thick)
-        for (int i = 0; i < 3; i++) {
-            int x = btn.x - i - 1;
-            int y = btn.y - i - 1;
-            int w = btn.w + ((i + 1) * 2);
-            int h = btn.h + ((i + 1) * 2);
-
-            // Clamp to screen bounds
-            if (x < 0) { w += x; x = 0; }
-            if (y < 0) { h += y; y = 0; }
-            if (x + w > SCREEN_WIDTH) w = SCREEN_WIDTH - x;
-            if (y + h > SCREEN_HEIGHT) h = SCREEN_HEIGHT - y;
+        // Draw white highlight INSIDE button boundaries (2 pixels thick)
+        // This prevents overlap with content areas above/below buttons
+        for (int i = 0; i < 2; i++) {
+            int x = btn.x + i + 1;
+            int y = btn.y + i + 1;
+            int w = btn.w - ((i + 1) * 2);
+            int h = btn.h - ((i + 1) * 2);
 
             // Only draw if valid dimensions
-            if (w > 0 && h > 0) {
-                tft.drawRect(x, y, w, h, COLOR_YELLOW);
+            if (w > 4 && h > 4) {
+                tft.drawRect(x, y, w, h, COLOR_WHITE);
             }
         }
     } else {
-        // Clear highlight by filling area around button with black (3 pixels thick)
-        // This completely removes the yellow highlight
-        for (int i = 0; i < 3; i++) {
-            int x = btn.x - i - 1;
-            int y = btn.y - i - 1;
-            int w = btn.w + ((i + 1) * 2);
-            int h = btn.h + ((i + 1) * 2);
-
-            // Clamp to screen bounds
-            if (x < 0) { w += x; x = 0; }
-            if (y < 0) { h += y; y = 0; }
-            if (x + w > SCREEN_WIDTH) w = SCREEN_WIDTH - x;
-            if (y + h > SCREEN_HEIGHT) h = SCREEN_HEIGHT - y;
+        // Clear highlight by redrawing button border area
+        // Since highlight is inside button, we redraw the inner border area in button's background color
+        for (int i = 0; i < 2; i++) {
+            int x = btn.x + i + 1;
+            int y = btn.y + i + 1;
+            int w = btn.w - ((i + 1) * 2);
+            int h = btn.h - ((i + 1) * 2);
 
             // Only draw if valid dimensions
-            if (w > 0 && h > 0) {
-                tft.drawRect(x, y, w, h, COLOR_BLACK);
+            if (w > 4 && h > 4) {
+                // Determine clear color based on button type
+                uint16_t clear_color = COLOR_BLACK;
+
+                if (btn.id >= BTN_NAV_DASHBOARD && btn.id <= BTN_NAV_CONFIG) {
+                    // Nav buttons: check if this button is the active page
+                    bool is_active_page = false;
+                    if (btn.id == BTN_NAV_DASHBOARD && current_page == PAGE_DASHBOARD) is_active_page = true;
+                    if (btn.id == BTN_NAV_DTC && current_page == PAGE_DTC) is_active_page = true;
+                    if (btn.id == BTN_NAV_CONFIG && current_page == PAGE_CONFIG) is_active_page = true;
+
+                    // Use GRAY for active page button, DARKGRAY for inactive
+                    clear_color = is_active_page ? COLOR_GRAY : COLOR_DARKGRAY;
+                } else if (btn.id == BTN_DTC_REFRESH) {
+                    clear_color = COLOR_BLUE;  // Refresh button background
+                } else if (btn.id == BTN_DTC_CLEAR) {
+                    clear_color = COLOR_RED;  // Clear All button background
+                } else if (btn.id == BTN_DTC_UP || btn.id == BTN_DTC_DOWN) {
+                    // Scroll buttons: use BLUE if enabled, DARKGRAY if disabled
+                    clear_color = btn.enabled ? COLOR_BLUE : COLOR_DARKGRAY;
+                }
+
+                tft.drawRect(x, y, w, h, clear_color);
             }
         }
     }
@@ -223,12 +256,13 @@ inline void drawButtonHighlight(int button_index, bool show) {
 /**
  * Redraw button highlight (call after screen updates)
  * Only draws if button is currently enabled
+ * @param current_page Current active page
  */
-inline void refreshButtonHighlight() {
+inline void refreshButtonHighlight(Page current_page) {
     // Only refresh if current button is valid and enabled
     if (current_button_index >= 0 && current_button_index < BTN_MAX) {
         if (ui_buttons[current_button_index].enabled) {
-            drawButtonHighlight(current_button_index, true);
+            drawButtonHighlight(current_button_index, true, current_page);
         }
     }
 }
@@ -250,7 +284,7 @@ inline void navigateNextButton(Page current_page) {
     }
 
     // Clear current highlight
-    drawButtonHighlight(current_button_index, false);
+    drawButtonHighlight(current_button_index, false, current_page);
 
     // Find current button in visible list
     int current_pos = -1;
@@ -271,7 +305,7 @@ inline void navigateNextButton(Page current_page) {
     }
 
     // Draw new highlight
-    drawButtonHighlight(current_button_index, true);
+    drawButtonHighlight(current_button_index, true, current_page);
 }
 
 /**
@@ -287,7 +321,7 @@ inline void navigatePreviousButton(Page current_page) {
     }
 
     // Clear current highlight
-    drawButtonHighlight(current_button_index, false);
+    drawButtonHighlight(current_button_index, false, current_page);
 
     // Find current button in visible list
     int current_pos = -1;
@@ -308,7 +342,7 @@ inline void navigatePreviousButton(Page current_page) {
     }
 
     // Draw new highlight
-    drawButtonHighlight(current_button_index, true);
+    drawButtonHighlight(current_button_index, true, current_page);
 }
 
 /**
@@ -325,22 +359,34 @@ inline bool activateButton(Page& current_page, bool& page_needs_redraw, int dtc_
         // Bottom Navigation
         case BTN_NAV_DASHBOARD:
             if (current_page != PAGE_DASHBOARD) {
+                Serial.println("[Button] Switching to Dashboard page");
                 current_page = PAGE_DASHBOARD;
                 page_needs_redraw = true;
+                // Keep Dashboard button highlighted after page change
+                current_button_index = BTN_NAV_DASHBOARD;
+                Serial.printf("[Button] Set current_button_index = %d (Dashboard)\n", current_button_index);
             }
             return true;
 
         case BTN_NAV_DTC:
             if (current_page != PAGE_DTC) {
+                Serial.println("[Button] Switching to DTC page");
                 current_page = PAGE_DTC;
                 page_needs_redraw = true;
+                // Keep DTC button highlighted after page change
+                current_button_index = BTN_NAV_DTC;
+                Serial.printf("[Button] Set current_button_index = %d (DTC)\n", current_button_index);
             }
             return true;
 
         case BTN_NAV_CONFIG:
             if (current_page != PAGE_CONFIG) {
+                Serial.println("[Button] Switching to Config page");
                 current_page = PAGE_CONFIG;
                 page_needs_redraw = true;
+                // Keep Config button highlighted after page change
+                current_button_index = BTN_NAV_CONFIG;
+                Serial.printf("[Button] Set current_button_index = %d (Config)\n", current_button_index);
             }
             return true;
 
@@ -395,9 +441,9 @@ inline void handleButtonInput(Page& current_page, bool& page_needs_redraw, int d
     }
 
     // Check buttons (active LOW with pull-up resistors)
-    bool left_pressed = (digitalRead(BTN_LEFT_PIN) == LOW);
-    bool right_pressed = (digitalRead(BTN_RIGHT_PIN) == LOW);
-    bool select_pressed = (digitalRead(BTN_SELECT_PIN) == LOW);
+    bool left_pressed = (digitalRead(BTN_LEFT) == LOW);
+    bool right_pressed = (digitalRead(BTN_RIGHT) == LOW);
+    bool select_pressed = (digitalRead(BTN_SELECT) == LOW);
 
     if (left_pressed) {
         navigatePreviousButton(current_page);

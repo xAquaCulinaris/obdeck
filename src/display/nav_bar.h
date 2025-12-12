@@ -84,7 +84,7 @@ inline void drawBottomNav(Page active_page) {
         bool is_active = (i == active_page);
 
         // Button background (each button is 160×40 = 6,400 pixels)
-        uint16_t bg_color = is_active ? COLOR_BLUE : COLOR_DARKGRAY;
+        uint16_t bg_color = is_active ? COLOR_GRAY : COLOR_DARKGRAY;
         tft.fillRect(x, y, NAV_BUTTON_WIDTH, BOTTOM_NAV_HEIGHT, bg_color);
         delay(50);  // CRITICAL: Increased delay after each button fillRect
 

@@ -18,7 +18,7 @@
 #define TFT_SCLK 18
 #define TFT_CS   5   // Chip Select
 #define TFT_DC   2   // Data/Command
-#define TFT_RST  -1  // Reset disabled - causes display issues when connected to GPIO 4
+#define TFT_RST  -1  // Reset disabled - this specific display doesn't work with RST connected
 
 // Touch disabled (using physical buttons)
 #define TOUCH_CS -1  // Required by TFT_eSPI even when not using touch
@@ -37,10 +37,10 @@
 // Smooth fonts
 #define SMOOTH_FONT
 
-// SPI Frequency (ULTRA LOW for maximum stability)
-#define SPI_FREQUENCY        250000  // 250 kHz (was 1 MHz)
-#define SPI_READ_FREQUENCY   250000  // 250 kHz
-#define SPI_TOUCH_FREQUENCY  250000  // 250 kHz
+// SPI Frequency (Testing 10 MHz for better performance)
+#define SPI_FREQUENCY        10000000  // 10 MHz (increased from 250 kHz)
+#define SPI_READ_FREQUENCY   10000000  // 10 MHz
+#define SPI_TOUCH_FREQUENCY  2500000   // 2.5 MHz (conservative for touch if ever used)
 
 // Color depth (16-bit RGB565)
 #define TFT_RGB_ORDER TFT_BGR  // ILI9488 uses BGR ordering

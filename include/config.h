@@ -12,29 +12,20 @@
 // HARDWARE PIN CONFIGURATION
 // ============================================================================
 
-// Display SPI Pins (ILI9488)
-#define TFT_MOSI      23
-#define TFT_MISO      19
-#define TFT_SCLK      18
-#define TFT_CS        5   // Changed from GPIO15 (strapping pin issue)
-#define TFT_DC        2
-#define TFT_RST       4
+// NOTE: Display pins (TFT_MOSI, TFT_CS, TFT_RST, etc.) and SPI frequency are
+//       configured in include/TFT_eSPI_User_Setup.h (used by TFT_eSPI library)
 
 // IMPORTANT: Display Power Requirements
 // - VCC: Connect to 5V (ESP32 VIN), NOT 3.3V
 // - LED: Connect to 3.3V
-// - Add 1000µF capacitor between VCC and GND (close to display)
+// - RST: DO NOT CONNECT (leave floating) - this display doesn't work with RST
+// - Add 100-470µF capacitor between display VCC and GND (close to display)
 // - This prevents power spikes when updating screen
 
 // Physical Buttons (3-button navigation system)
-#define BTN_LEFT      14  // Navigate to previous UI button (GPIO14)
-#define BTN_RIGHT     33  // Navigate to next UI button (GPIO33)
+#define BTN_LEFT      33  // Navigate to previous UI button (GPIO14)
+#define BTN_RIGHT     14  // Navigate to next UI button (GPIO33)
 #define BTN_SELECT    26  // Activate highlighted UI button (GPIO26)
-
-// SPI Configuration
-#define SPI_FREQUENCY       40000000  // 40 MHz for display
-#define SPI_READ_FREQUENCY  20000000  // 20 MHz for reading
-#define SPI_TOUCH_FREQUENCY  2500000  // 2.5 MHz for touch
 
 // ============================================================================
 // BLUETOOTH CONFIGURATION

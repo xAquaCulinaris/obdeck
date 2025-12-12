@@ -37,6 +37,9 @@ TFT_eSPI tft = TFT_eSPI();
 Page current_page = PAGE_DASHBOARD;  // Start with Dashboard page
 bool page_needs_redraw = true;
 
+// Button navigation state (shared across all modules)
+int current_button_index = 0;  // Start with Dashboard button highlighted
+
 // ============================================================================
 // ARDUINO SETUP & LOOP
 // ============================================================================
@@ -75,7 +78,7 @@ void setup() {
       tft.setTextPadding(200);
       delay(10);
       delay(50);  // Extra wait before first draw operation
-      tft.drawString("OBDeck", 80, 100);
+      tft.drawString("OBDeck", 160, 100);
       delay(150);  // Longer delay after drawString with padding (does fillRect internally)
 
       // Animate "Starting" with dots (8 cycles = ~2 seconds)
@@ -99,8 +102,7 @@ void setup() {
           starting_text[10 + dots] = '\0';
 
           // Draw text with drawString instead of print
-          delay(100);  // Wait before each draw operation
-          tft.drawString(starting_text, 100, 140);
+          tft.drawString(starting_text, 160, 140);
           delay(200);  // Wait after draw (250px padding does fillRect internally)
       }
 
